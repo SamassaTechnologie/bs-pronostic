@@ -325,8 +325,8 @@ def _af_fixtures(db: Session, af: ApiFootball, comps: list[Competition], now: da
             try:
                 fixtures = af.fixtures_by_date(day)
             except ProviderError as exc:
-                if "quota" in str(exc).lower() or "budget" in str(exc).lower():
-                    raise
+                if any(w in str(exc).lower() for w in ("quota", "budget", "access:", "suspended", "token")):
+                    raise  # problème de compte : inutile d'insister sur les autres dates
                 skipped.append(f"{day} ({exc})")  # ex. plan gratuit limité à hier → demain
                 continue
             for fx in fixtures:
@@ -392,8 +392,8 @@ def _af_enrich(db: Session, af: ApiFootball, now: datetime, max_fixtures: int) -
             except ProviderError as exc:
                 db.rollback()
                 errors.append(str(exc))
-                if "budget" in str(exc).lower():
-                    break
+                if any(w in str(exc).lower() for w in ("budget", "access:", "suspended", "token")):
+                    break  # problème de compte : on s'arrête
                 continue
             db.execute(delete(Injury).where(Injury.match_id == m.id, Injury.source == af.name))
             for inj in injuries:
