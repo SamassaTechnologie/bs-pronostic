@@ -21,10 +21,32 @@ log = logging.getLogger("sam")
 _scheduler = None
 
 
+# Colonnes ajoutées après la première mise en production : (table, colonne, type SQL).
+ADDED_COLUMNS = [
+    ("predictions", "featured", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("predictions", "featured_at", "TIMESTAMP WITH TIME ZONE"),
+]
+
+
+def migrate_columns() -> None:
+    """Ajoute les colonnes manquantes sans toucher aux données existantes (idempotent)."""
+    from sqlalchemy import inspect, text
+
+    insp = inspect(engine)
+    with engine.begin() as conn:
+        for table, column, ddl in ADDED_COLUMNS:
+            if table in insp.get_table_names() and column not in {c["name"] for c in insp.get_columns(table)}:
+                if engine.dialect.name == "sqlite":
+                    ddl = ddl.replace("TIMESTAMP WITH TIME ZONE", "DATETIME").replace("FALSE", "0")
+                conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}"))
+                log.info("Migration : colonne %s.%s ajoutée", table, column)
+
+
 def init_db() -> None:
     from . import models  # noqa: F401  (enregistre les tables)
 
     Base.metadata.create_all(engine)
+    migrate_columns()
     with SessionLocal() as db:
         seed_reference_data(db)
 

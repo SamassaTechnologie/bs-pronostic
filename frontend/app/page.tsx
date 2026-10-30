@@ -6,6 +6,8 @@ import { Freshness } from "@/components/Freshness";
 import { PickCard } from "@/components/PickCard";
 import { CompactPick, List, MatchRow } from "@/components/Rows";
 import { Empty, ErrorBox, MoreLink, ProbBar, Section, Stat } from "@/components/ui";
+import { Landing } from "@/components/Landing";
+import { currentMember } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +18,9 @@ type Dashboard = {
   stats: {
     matches_analysed: number; matches_today: number; picks: number; competitions: number; insufficient: number;
     history_total: number; history_hit_rate: number | null; history_roi: number | null; history_settled: number;
+    selection_settled: number; selection_hit_rate: number | null; selection_roi: number | null;
   };
+  selection: Pick[];
   today_matches: { match: MatchSummary; status: string; n_picks: number; match_confidence: number; avoid: boolean }[];
   best_today: Pick[];
   by_probability: Pick[];
@@ -28,6 +32,11 @@ type Dashboard = {
 
 export default async function Home() {
   const tz = await userTz();
+  const me = await currentMember();
+  if (!me) {
+    const summary = await backend<Parameters<typeof Landing>[0]["s"]>("/api/public-summary");
+    return <Landing s={summary.ok ? summary.data : null} />;
+  }
   const [dash, meta] = await Promise.all([
     backend<Dashboard>(`/api/dashboard?tz=${encodeURIComponent(tz)}`),
     backend<Meta>("/api/meta"),
@@ -58,6 +67,29 @@ export default async function Home() {
         />
         <Stat label="ROI théorique" value={d.stats.history_roi !== null ? signedPct(d.stats.history_roi) : "—"} hint="Mise fixe, pronostics avec cote" />
       </div>
+
+      <Section
+        title="Sélection SAM du jour"
+        action={<MoreLink href="/historique?selection=1">Bilan</MoreLink>}
+      >
+        <p className="-mt-1 mb-3 px-1 text-sm text-steel">
+          5 pronostics au maximum, probabilité d&apos;au moins 75 % et confiance élevée, figés avant le match.
+          {d.stats.selection_settled
+            ? ` Bilan réel : ${pct(d.stats.selection_hit_rate)} sur ${d.stats.selection_settled} pronostics réglés.`
+            : ""}
+        </p>
+        {d.selection.length ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {d.selection.map((p) => (
+              <PickCard key={`s-${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} />
+            ))}
+          </div>
+        ) : (
+          <Empty title="Aucun pronostic n'atteint les critères de la sélection pour le moment">
+            Mieux vaut ne rien proposer qu&apos;un pronostic fragile. Les autres sélections restent consultables ci-dessous.
+          </Empty>
+        )}
+      </Section>
 
       <Section title="Top 5 des sélections les plus fiables" action={<MoreLink href="/pronostics?sort=probability">Tout voir</MoreLink>}>
         {d.top5.length ? (

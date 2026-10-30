@@ -249,3 +249,16 @@ def test_form_and_standings():
     table = standings(matches)
     assert len(table) == 6 and table[0]["position"] == 1
     assert sum(r["played"] for r in table) == 2 * len(matches)
+
+
+def test_market_blend_is_coherent_and_between_sources():
+    from app.engine.calibration import blend_with_market
+    model = ft_probabilities(score_matrix(1.9, 0.8, -0.05))
+    implied = {"1": 0.50, "X": 0.27, "2": 0.23, "O2.5": 0.48, "U2.5": 0.52}
+    out = blend_with_market(model, implied, 0.2)
+    assert abs(out["1"] + out["X"] + out["2"] - 1) < 1e-9
+    assert min(model["1"], implied["1"]) <= out["1"] <= max(model["1"], implied["1"])
+    assert abs(out["1X"] - (out["1"] + out["X"])) < 1e-12
+    assert out["O1.5"] >= out["O2.5"] >= out["O3.5"] and abs(out["U2.5"] + out["O2.5"] - 1) < 1e-12
+    assert out["BTTS_Y"] == model["BTTS_Y"]  # pas de cote : modèle seul
+    assert blend_with_market(model, implied, 1.0)["1"] == pytest.approx(model["1"])

@@ -56,7 +56,13 @@ def pick_card(payload: dict, mk: dict) -> dict:
         "edge": mk.get("edge"), "fair_odds": mk.get("fair_odds"), "explanation": mk.get("explanation"),
         "factors_for": mk.get("factors_for", []), "factors_against": mk.get("factors_against", []),
         "score": mk.get("score"), "is_pick": mk["key"] in (payload.get("picks") or []),
+        "model_probability": mk.get("model_probability"), "consensus": bool(mk.get("consensus")),
     }
+
+
+def _featured_keys(db: Session, since: datetime) -> set:
+    return {(p.match_id, p.market_key) for p in db.scalars(select(Prediction).join(
+        Match, Prediction.match_id == Match.id).where(Prediction.featured.is_(True), Match.kickoff >= since)).unique()}
 
 
 def _upcoming_analyses(db: Session, start: datetime, end: datetime) -> list[Analysis]:
@@ -146,6 +152,12 @@ def dashboard(tz: Optional[str] = None, db: Session = Depends(get_db)):
                        "avg_confidence": round(sum(c["confidence"]["score"] for c in v) / len(v), 1)}
                       for k, v in market_agg.items()), key=lambda d: (-d["count"], -d["avg_probability"]))
     perf = performance(db)["overall"]
+    feat_perf = performance(db, featured=True)["overall"]
+    featured_keys = _featured_keys(db, now)
+    for c in picks:
+        c["featured"] = (c["match"]["id"], c["market_key"]) in featured_keys
+    selection = sorted([c for c in picks if (c["match"]["id"], c["market_key"]) in featured_keys],
+                       key=lambda c: c["match"]["kickoff"])
     latest = db.scalars(select(Analysis).order_by(Analysis.computed_at.desc(), Analysis.id.desc()).limit(8)).unique().all()
     today_matches = [{"match": a.payload.get("match") or match_summary(a.match), "status": a.status,
                       "n_picks": a.n_picks, "match_confidence": a.match_confidence,
@@ -161,7 +173,9 @@ def dashboard(tz: Optional[str] = None, db: Session = Depends(get_db)):
                   "competitions": len({a.match.competition_id for a in analyses}),
                   "insufficient": len([a for a in analyses if a.status != "ok" and a.match.kickoff >= now]),
                   "history_total": perf["total"], "history_hit_rate": perf["hit_rate"], "history_roi": perf["roi"],
-                  "history_settled": perf["n"]},
+                  "history_settled": perf["n"], "selection_settled": feat_perf["n"],
+                  "selection_hit_rate": feat_perf["hit_rate"], "selection_roi": feat_perf["roi"]},
+        "selection": selection,
         "today_matches": today_matches,
         "best_today": best_today[:10],
         "by_probability": by_prob[:20],
@@ -184,7 +198,7 @@ def predictions(date_from: Optional[date] = None, date_to: Optional[date] = None
                 market: Optional[str] = None, family: Optional[str] = None,
                 min_prob: float = Query(0.0, ge=0, le=1), min_conf: int = Query(0, ge=0, le=100),
                 tier: Optional[str] = None, min_odds: Optional[float] = None, max_odds: Optional[float] = None,
-                all_markets: bool = False, best: bool = False, sort: str = "score",
+                all_markets: bool = False, best: bool = False, featured_only: bool = False, sort: str = "score",
                 limit: int = Query(60, ge=1, le=300), db: Session = Depends(get_db)):
     zone = _tz(tz)
     now = _now()
@@ -246,6 +260,11 @@ def predictions(date_from: Optional[date] = None, date_to: Optional[date] = None
              "value": lambda c: c["edge"] if c["edge"] is not None else -9,
              "kickoff": lambda c: -_parse(c["match"]["kickoff"]).timestamp(),
              "score": lambda c: c.get("opportunity") or c["score"] or 0}.get(sort, lambda c: c["score"] or 0)
+    fk = _featured_keys(db, now - timedelta(hours=3))
+    for c in cards:
+        c["featured"] = (c["match"]["id"], c["market_key"]) in fk
+    if featured_only:
+        cards = [c for c in cards if c["featured"]]
     cards.sort(key=keyfn, reverse=True)
     return {"count": len(cards), "items": cards[:limit], "range": {"from": start.isoformat(), "to": end.isoformat()}}
 
@@ -361,8 +380,11 @@ def combos_evaluate(req: EvaluateRequest, db: Session = Depends(get_db)):
 
 @router.get("/history")
 def history(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), result: Optional[str] = None,
-            market: Optional[str] = None, competition: Optional[int] = None, db: Session = Depends(get_db)):
+            market: Optional[str] = None, competition: Optional[int] = None, featured: bool = False,
+            db: Session = Depends(get_db)):
     q = select(Prediction).join(Match, Prediction.match_id == Match.id)
+    if featured:
+        q = q.where(Prediction.featured.is_(True))
     if result:
         q = q.where(Prediction.result == result)
     if market:
@@ -376,10 +398,10 @@ def history(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), 
 
 @router.get("/performance")
 def performance_endpoint(date_from: Optional[date] = None, date_to: Optional[date] = None,
-                         competition: Optional[int] = None, db: Session = Depends(get_db)):
+                         competition: Optional[int] = None, featured: bool = False, db: Session = Depends(get_db)):
     df = datetime.combine(date_from, time(0), tzinfo=UTC) if date_from else None
     dt = datetime.combine(date_to, time(0), tzinfo=UTC) + timedelta(days=1) if date_to else None
-    return performance(db, df, dt, competition)
+    return performance(db, df, dt, competition, featured)
 
 
 @router.get("/calibration")
@@ -387,3 +409,20 @@ def calibration_summary(db: Session = Depends(get_db)):
     cal = load_calibration(db)
     return {k: cal.get(k) for k in ("description", "source", "divisions", "period", "params", "n_matches",
                                      "generated_at", "out_of_sample", "reliability")}
+
+
+@router.get("/public-summary")
+def public_summary(db: Session = Depends(get_db)):
+    """Chiffres publics pour la page de présentation (aucune donnée personnelle)."""
+    perf = performance(db)["overall"]
+    feat = performance(db, featured=True)["overall"]
+    cal = load_calibration(db)
+    oos = cal.get("out_of_sample") or {}
+    comps = db.scalar(select(func.count(Competition.id)).where(Competition.enabled.is_(True)))
+    upcoming = db.scalar(select(func.count(Analysis.id)).join(Match, Analysis.match_id == Match.id).where(
+        Match.kickoff >= _now()))
+    return {"competitions": comps, "upcoming_analysed": upcoming,
+            "all": {k: perf[k] for k in ("total", "n", "won", "hit_rate", "avg_probability", "roi")},
+            "selection": {k: feat[k] for k in ("total", "n", "won", "hit_rate", "avg_probability", "roi")},
+            "backtest": {"tiers": oos.get("tiers"), "n_matches": cal.get("n_matches"),
+                         "divisions": len(cal.get("divisions") or [])}}

@@ -16,9 +16,14 @@ DEFAULT_SETTINGS: dict = {
     # Exclut les marchés quasi certains sans intérêt (cote juste < 1,10, ex. +0,5 but à 95 %)
     "min_fair_odds": 1.10,
     "max_picks_per_match": 2,
-    "max_daily_picks": 25,
+    "max_daily_picks": 15,
     "days_ahead": 3,
     "enabled_markets": list(DISPLAY_KEYS),
+    # Sélection SAM du jour : courte liste, critères renforcés
+    "featured_min_probability": 0.75,
+    "featured_min_confidence": 70,
+    "featured_max_per_day": 5,
+    "featured_min_fair_odds": 1.15,  # écarte les quasi-certitudes sans intérêt de la vitrine
     # Matchs à éviter
     "avoid_confidence_below": 45,
     "market_divergence_alert": 0.15,

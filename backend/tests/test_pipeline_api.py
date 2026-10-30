@@ -205,3 +205,18 @@ def test_admin_security_and_settings(client):
     assert client.post("/api/cron/run").status_code == 401
     runs = client.get("/api/admin/sync-runs", headers=ADMIN).json()
     assert runs and {"provider", "status", "message"} <= set(runs[0])
+
+
+def test_featured_selection(populated, client):
+    with SessionLocal() as db:
+        feats = db.scalars(select(Prediction).where(Prediction.featured.is_(True))).all()
+        per_day = {}
+        for p in feats:
+            assert p.probability >= 0.75 and p.confidence >= 70 and p.featured_at is not None
+            per_day.setdefault(p.match.kickoff.date(), set()).add(p.match_id)
+        assert all(len(v) <= 5 for v in per_day.values())
+        assert len({p.match_id for p in feats}) == len(feats)  # un par match
+    perf = client.get("/api/performance", params={"featured": True}).json()
+    assert perf["overall"]["total"] == len(feats)
+    summary = client.get("/api/public-summary").json()
+    assert summary["selection"]["total"] == len(feats) and summary["backtest"]["tiers"]

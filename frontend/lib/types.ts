@@ -34,6 +34,9 @@ export type PickCard = {
   factors_against: string[];
   score: number | null;
   is_pick: boolean;
+  featured?: boolean;
+  model_probability?: number;
+  consensus?: boolean;
 };
 
 export type Market = {

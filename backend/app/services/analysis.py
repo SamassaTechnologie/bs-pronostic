@@ -192,5 +192,53 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
             day_counts[m.kickoff.date()] += 1
             published += 1
         db.commit()
+    featured = select_featured(db, candidates, s, now) if publish and candidates else 0
     return {"analysed": stats["analysed"], "ok": stats["ok"], "insufficient": stats["insufficient"],
-            "competitions": len(by_comp), "published": published, "computed_at": now.isoformat()}
+            "competitions": len(by_comp), "published": published, "featured": featured,
+            "computed_at": now.isoformat()}
+
+
+def featured_eligible(mk: dict, s: dict) -> bool:
+    if mk["probability"] < float(s["featured_min_probability"]):
+        return False
+    if mk["confidence"]["score"] < int(s["featured_min_confidence"]):
+        return False
+    if (mk.get("odds") or 1 / mk["probability"]) < float(s["featured_min_fair_odds"]):
+        return False
+    edge = mk.get("edge")
+    return edge is None or edge >= -0.03  # pas de cote nettement inférieure à la cote juste
+
+
+def select_featured(db: Session, candidates: list, s: dict, now: datetime) -> int:
+    """Sélection SAM du jour : au plus N pronostics par jour (un par match), critères renforcés.
+    Le statut est attribué avant le coup d'envoi et n'est jamais retiré ensuite."""
+    best: dict[int, tuple] = {}
+    for score, m, mk in candidates:
+        if m.kickoff <= now + timedelta(minutes=10) or not featured_eligible(mk, s):
+            continue
+        if m.id not in best or score > best[m.id][0]:
+            best[m.id] = (score, m, mk)
+    if not best:
+        return 0
+    days = {m.kickoff.date() for _, m, _ in best.values()}
+    per_day = Counter()
+    for p in db.scalars(select(Prediction).join(Match, Prediction.match_id == Match.id).where(
+            Prediction.featured.is_(True), Match.kickoff >= now - timedelta(days=2))).unique():
+        if p.match.kickoff.date() in days:
+            per_day[p.match.kickoff.date()] += 1
+    featured_matches = {p.match_id for p in db.scalars(select(Prediction).where(
+        Prediction.featured.is_(True), Prediction.match_id.in_(list(best)))).unique()}
+    n = 0
+    for score, m, mk in sorted(best.values(), key=lambda t: t[0], reverse=True):
+        day = m.kickoff.date()
+        if m.id in featured_matches or per_day[day] >= int(s["featured_max_per_day"]):
+            continue
+        pred = db.scalar(select(Prediction).where(Prediction.match_id == m.id, Prediction.market_key == mk["key"]))
+        if pred is None or pred.result != "pending":
+            continue
+        pred.featured = True
+        pred.featured_at = now
+        per_day[day] += 1
+        n += 1
+    db.commit()
+    return n

@@ -9,7 +9,7 @@ from typing import Hashable, Mapping, Optional
 
 import numpy as np
 
-from .calibration import PlattCalibrator, apply_calibration
+from .calibration import PlattCalibrator, apply_calibration, blend_with_market
 from .confidence import DEFAULT_FAMILY_RELIABILITY, ConfidenceInputs, compute_confidence
 from .explain import build_factors, explanation
 from .features import TeamHistory, form_summary, h2h_matches, head_to_head, recent_market_rates
@@ -34,6 +34,7 @@ class EngineParams:
     min_stat_matches: int = 60
     h2h_max_weight: float = 0.10  # poids maximal des confrontations directes (10 %)
     h2h_min_matches: int = 3
+    model_weight: float = 0.2  # part du modèle dans le consensus avec les cotes (backtest)
 
 
 @dataclass
@@ -265,6 +266,7 @@ def analyze_fixture(lm: LeagueModels, fx: FixtureContext, history: TeamHistory,
     raw = rp["raw"]
     cal = apply_calibration(raw, calibrators)
     implied = implied_probabilities(fx.odds)
+    final = blend_with_market(cal, implied, params.model_weight)
     last_h = history.last_played(home, when)
     last_a = history.last_played(away, when)
     days_h = (when - last_h).total_seconds() / 86400 if last_h else None
@@ -279,7 +281,9 @@ def analyze_fixture(lm: LeagueModels, fx: FixtureContext, history: TeamHistory,
             markets.append({**base, "available": False, "probability": None,
                             "reason": UNAVAILABLE.get(spec.family, "Données insuffisantes")})
             continue
-        p = float(np.clip(cal[key], 0.001, 0.999))
+        p_model = float(np.clip(cal[key], 0.001, 0.999))
+        p = float(np.clip(final[key], 0.001, 0.999))
+        blended = abs(p - p_model) > 1e-9
         model_for_volume = {"corners": lm.corners, "cards": lm.cards}.get(spec.family, lm.goals)
         nh = model_for_volume.team_matches(home)
         na = model_for_volume.team_matches(away)
@@ -288,7 +292,7 @@ def analyze_fixture(lm: LeagueModels, fx: FixtureContext, history: TeamHistory,
         pm = implied.get(key)
         conf = compute_confidence(ConfidenceInputs(
             n_home=nh, n_away=na, days_since_home_last=days_h, days_since_away_last=days_a,
-            data_age_hours=fx.data_age_hours, p_model=p, p_recent=rates["combined"], n_recent=rates["n"],
+            data_age_hours=fx.data_age_hours, p_model=p_model, p_recent=rates["combined"], n_recent=rates["n"],
             model_reliability=float(reliability.get(key, DEFAULT_FAMILY_RELIABILITY[spec.family])),
             p_market=pm, injuries_count=inj_total, late_season=fx.late_season))
         tier = tier_of(p, settings)
@@ -297,15 +301,20 @@ def analyze_fixture(lm: LeagueModels, fx: FixtureContext, history: TeamHistory,
                "lam": rp["lam"], "mu": rp["mu"], "ht": rp["ht"], "exp_corners": rp["corners"],
                "exp_cards": rp["cards"], "rates": rates, "p_market": pm, "odds": o.price if o else None,
                "edge": edge, "h2h_matches": h2h_list, "n_home": nh, "n_away": na, "injuries": inj_counts}
-        fav, unf = build_factors(key, p, ctx)
+        fav, unf = build_factors(key, p_model, ctx)
+        expl = explanation(key, p, tier, conf, ctx)
+        if blended and pm is not None:
+            expl += (f" Consensus : modèle {round(p_model * 100)} %, marché {round(pm * 100)} % "
+                     f"(poids du modèle {round(params.model_weight * 100)} %).").replace(" %", "\u00a0%")
         m = {**base, "available": True, "probability": round(p, 4), "raw_probability": round(float(raw[key]), 4),
+             "model_probability": round(p_model, 4), "consensus": blended,
              "tier": tier, "confidence": conf,
              "odds": round(o.price, 3) if o else None, "bookmaker": o.bookmaker if o else None,
              "odds_source": o.source if o else None,
              "implied_probability": round(pm, 4) if pm is not None else None,
              "edge": round(edge, 4) if edge is not None else None, "fair_odds": round(1 / p, 3),
              "recent": {k: (round(v, 3) if isinstance(v, float) else v) for k, v in rates.items()},
-             "explanation": explanation(key, p, tier, conf, ctx),
+             "explanation": expl,
              "factors_for": fav, "factors_against": unf}
         m["score"] = selection_score(m)
         markets.append(m)

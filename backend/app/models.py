@@ -180,6 +180,8 @@ class Prediction(Base):
     implied_probability: Mapped[Optional[float]] = mapped_column(Float)
     engine_version: Mapped[str] = mapped_column(String(32))
     explanation: Mapped[Optional[str]] = mapped_column(Text)
+    featured: Mapped[bool] = mapped_column(Boolean, default=False, index=True)  # Sélection SAM du jour
+    featured_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime)
     result: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     settled_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime)
 

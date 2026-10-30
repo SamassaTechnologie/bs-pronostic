@@ -15,7 +15,9 @@ BOUNDS = {
     "tier_a": (0.5, 0.99), "tier_b": (0.5, 0.99), "tier_c": (0.5, 0.99),
     "min_probability": (0.5, 0.99), "min_confidence": (0, 100), "min_fair_odds": (1.0, 3.0),
     "max_picks_per_match": (1, 5), "max_daily_picks": (1, 200), "days_ahead": (1, 7),
-    "avoid_confidence_below": (0, 100), "market_divergence_alert": (0.05, 0.5),
+    "avoid_confidence_below": (0, 100),
+    "featured_min_probability": (0.5, 0.99), "featured_min_confidence": (0, 100), "featured_max_per_day": (0, 20),
+    "featured_min_fair_odds": (1.0, 3.0), "market_divergence_alert": (0.05, 0.5),
 }
 
 

@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { BACKEND_URL } from "@/lib/api";
+import { currentMember } from "@/lib/supabase/server";
+import { authEnabled } from "@/lib/supabase/env";
+
+const MEMBERS_ONLY = [/^predictions$/, /^matches\/\d+$/, /^combos\//];
 
 const GET_ALLOWED = [/^meta$/, /^predictions$/, /^matches(\/\d+)?$/, /^history$/, /^performance$/, /^calibration$/];
 const POST_ALLOWED = [/^combos\/generate$/, /^combos\/evaluate$/];
@@ -8,6 +12,9 @@ async function forward(req: NextRequest, path: string[], method: "GET" | "POST")
   const p = path.join("/");
   const allowed = (method === "GET" ? GET_ALLOWED : POST_ALLOWED).some((r) => r.test(p));
   if (!allowed) return NextResponse.json({ detail: "Ressource non autorisée" }, { status: 404 });
+  if (authEnabled && MEMBERS_ONLY.some((r) => r.test(p)) && !(await currentMember())) {
+    return NextResponse.json({ detail: "Connectez-vous pour accéder aux pronostics." }, { status: 401 });
+  }
   try {
     const res = await fetch(`${BACKEND_URL}/api/${p}${req.nextUrl.search}`, {
       method,

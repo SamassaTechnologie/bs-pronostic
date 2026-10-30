@@ -3,6 +3,8 @@ import Link from "next/link";
 import "./globals.css";
 import { DesktopNav, Logo, MobileTabs } from "@/components/Nav";
 import { SwRegister } from "@/components/SwRegister";
+import { FollowsProvider } from "@/components/Follows";
+import { currentMember } from "@/lib/supabase/server";
 
 export const metadata: Metadata = {
   title: { default: "SAM-Prédiction", template: "%s · SAM-Prédiction" },
@@ -20,7 +22,8 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const signedIn = Boolean(await currentMember());
   return (
     <html lang="fr">
       <body>
@@ -33,14 +36,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 <span className="block text-[11px] text-white/65">L&apos;analyse avant le pronostic.</span>
               </span>
             </Link>
-            <DesktopNav />
+            <DesktopNav signedIn={signedIn} />
           </div>
         </header>
-        <main className="mx-auto max-w-5xl px-3.5 pb-28 pt-4 md:px-6 md:pb-12">{children}</main>
+        <FollowsProvider signedIn={signedIn}>
+          <main className="mx-auto max-w-5xl px-3.5 pb-28 pt-4 md:px-6 md:pb-12">{children}</main>
+        </FollowsProvider>
         <footer className="mx-auto max-w-5xl px-4 pb-28 text-center text-xs text-steel md:pb-8">
           Probabilités statistiques, aucune garantie de gain. Interdit aux mineurs. Pariez de manière responsable.
         </footer>
-        <MobileTabs />
+        <MobileTabs signedIn={signedIn} />
         <SwRegister />
       </body>
     </html>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { PickCard as Pick } from "@/lib/types";
 import { kickoffLabel, pct } from "@/lib/format";
 import { ConfidenceBadge, OddsInfo, ProbBar, TierBadge } from "./ui";
+import { PickActions } from "./Follows";
 
 export function PickCard({ pick, tz, thresholds, rank }: { pick: Pick; tz: string; thresholds?: number[]; rank?: number }) {
   const m = pick.match;
@@ -26,7 +27,10 @@ export function PickCard({ pick, tz, thresholds, rank }: { pick: Pick; tz: strin
               <ConfidenceBadge score={pick.confidence.score} level={pick.confidence.level} />
             </div>
           </div>
-          <div className="shrink-0 text-right font-display text-3xl font-bold tracking-tight text-night">{pct(pick.probability)}</div>
+          <div className="shrink-0 text-right">
+            <div className="font-display text-3xl font-bold tracking-tight text-night">{pct(pick.probability)}</div>
+            {pick.featured && <div className="text-[11px] font-bold text-pitch-deep">Sélection SAM</div>}
+          </div>
         </div>
         <div className="mt-2.5">
           <ProbBar p={pick.probability} thresholds={thresholds} />
@@ -50,6 +54,7 @@ export function PickCard({ pick, tz, thresholds, rank }: { pick: Pick; tz: strin
           <Factors fav={pick.factors_for} unf={pick.factors_against} />
         </div>
       </details>
+      <PickActions pick={pick} />
     </article>
   );
 }
