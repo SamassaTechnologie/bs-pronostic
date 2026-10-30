@@ -8,6 +8,8 @@ import { CompactPick, List, MatchRow } from "@/components/Rows";
 import { Empty, ErrorBox, MoreLink, ProbBar, Section, Stat } from "@/components/ui";
 import { Landing } from "@/components/Landing";
 import { currentMember } from "@/lib/supabase/server";
+import type { HistoryRow } from "@/lib/types";
+import { kickoffLabel, RESULT_LABEL } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -37,9 +39,10 @@ export default async function Home() {
     const summary = await backend<Parameters<typeof Landing>[0]["s"]>("/api/public-summary");
     return <Landing s={summary.ok ? summary.data : null} />;
   }
-  const [dash, meta] = await Promise.all([
+  const [dash, meta, recent] = await Promise.all([
     backend<Dashboard>(`/api/dashboard?tz=${encodeURIComponent(tz)}`),
-    backend<Meta>("/api/meta"),
+    backend<Meta>("/api/meta", { revalidate: 120 }),
+    backend<{ settled: HistoryRow[]; waiting: HistoryRow[] }>("/api/recent-results?limit=8"),
   ]);
   if (!dash.ok) return <ErrorBox message={dash.error} />;
   const d = dash.data;
@@ -88,6 +91,30 @@ export default async function Home() {
           <Empty title="Aucun pronostic n'atteint les critères de la sélection pour le moment">
             Mieux vaut ne rien proposer qu&apos;un pronostic fragile. Les autres sélections restent consultables ci-dessous.
           </Empty>
+        )}
+      </Section>
+
+      <Section title="Résultats récents" action={<MoreLink href="/direct">En direct</MoreLink>}>
+        {recent.ok && (recent.data.waiting.length || recent.data.settled.length) ? (
+          <List>
+            {[...recent.data.waiting, ...recent.data.settled].slice(0, 10).map((h) => (
+              <Link key={h.id} href={`/matchs/${h.match.id}`} className="flex items-center gap-3 px-4 py-3">
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-semibold">
+                    {h.match.home.name} – {h.match.away.name}
+                    {h.match.score && <span className="ml-1.5 text-steel">{h.match.score.home}-{h.match.score.away}</span>}
+                  </div>
+                  <div className="truncate text-xs text-steel">{h.market_label}, {pct(h.probability)}, {kickoffLabel(h.match.kickoff, tz)}</div>
+                </div>
+                <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold ${
+                  h.result === "won" ? "bg-pitch-soft text-pitch-deep" : h.result === "lost" ? "bg-brick-soft text-brick" : "bg-amber-soft text-amber"}`}>
+                  {h.result === "pending" ? "Résultat en attente" : RESULT_LABEL[h.result] ?? h.result}
+                </span>
+              </Link>
+            ))}
+          </List>
+        ) : (
+          <Empty title="Aucun pronostic terminé pour le moment" />
         )}
       </Section>
 

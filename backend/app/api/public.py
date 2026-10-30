@@ -426,3 +426,22 @@ def public_summary(db: Session = Depends(get_db)):
             "selection": {k: feat[k] for k in ("total", "n", "won", "hit_rate", "avg_probability", "roi")},
             "backtest": {"tiers": oos.get("tiers"), "n_matches": cal.get("n_matches"),
                          "divisions": len(cal.get("divisions") or [])}}
+
+
+@router.get("/live")
+def live(db: Session = Depends(get_db)):
+    """Matchs en cours (scores football-data.org, légèrement différés) et pronostics concernés."""
+    from ..services.live import live_board
+    return live_board(db)
+
+
+@router.get("/recent-results")
+def recent_results(limit: int = Query(12, ge=1, le=50), db: Session = Depends(get_db)):
+    now = _now()
+    settled = db.scalars(select(Prediction).join(Match, Prediction.match_id == Match.id).where(
+        Prediction.result.in_(["won", "lost", "void", "unverifiable"])).order_by(
+        Match.kickoff.desc()).limit(limit)).unique().all()
+    waiting = db.scalars(select(Prediction).join(Match, Prediction.match_id == Match.id).where(
+        Prediction.result == "pending", Match.kickoff < now - timedelta(minutes=110)).order_by(
+        Match.kickoff.desc()).limit(limit)).unique().all()
+    return {"settled": [prediction_row(p) for p in settled], "waiting": [prediction_row(p) for p in waiting]}

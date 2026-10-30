@@ -136,7 +136,7 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
   const { id } = await params;
   if (!/^\d+$/.test(id)) notFound();
   const tz = await userTz();
-  const [res, meta] = await Promise.all([backend<Detail>(`/api/matches/${id}`), backend<Meta>("/api/meta")]);
+  const [res, meta] = await Promise.all([backend<Detail>(`/api/matches/${id}`), backend<Meta>("/api/meta", { revalidate: 120 })]);
   if (!res.ok) {
     if (res.error.includes("introuvable")) notFound();
     return <ErrorBox message={res.error} />;

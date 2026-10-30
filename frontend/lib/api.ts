@@ -7,7 +7,7 @@ const BACKEND = (process.env.BACKEND_URL || "http://localhost:8000").replace(/\/
 export type Result<T> = { ok: true; data: T; error: null } | { ok: false; data: null; error: string };
 
 /** Appel serveur → backend FastAPI. L'URL et les jetons ne quittent jamais le serveur. */
-export async function backend<T>(path: string, init?: RequestInit & { admin?: boolean }): Promise<Result<T>> {
+export async function backend<T>(path: string, init?: RequestInit & { admin?: boolean; revalidate?: number }): Promise<Result<T>> {
   const headers = new Headers(init?.headers);
   if (init?.admin) headers.set("X-Admin-Token", process.env.BACKEND_ADMIN_TOKEN || "");
   if (init?.body) headers.set("Content-Type", "application/json");
@@ -15,7 +15,7 @@ export async function backend<T>(path: string, init?: RequestInit & { admin?: bo
     const res = await fetch(`${BACKEND}${path}`, {
       ...init,
       headers,
-      cache: "no-store",
+      ...(init?.revalidate ? { next: { revalidate: init.revalidate } } : { cache: "no-store" as const }),
       signal: AbortSignal.timeout(init?.admin ? 120000 : 60000),
     });
     if (!res.ok) {

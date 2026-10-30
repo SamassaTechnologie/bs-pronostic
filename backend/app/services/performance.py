@@ -25,7 +25,7 @@ def settle_predictions(db: Session, now: Optional[datetime] = None) -> dict:
         if m.status == "FINISHED":
             outcome = evaluate_market(p.market_key, match_to_data(m))
             if outcome is None:
-                if m.kickoff < now - timedelta(days=4):
+                if m.kickoff < now - timedelta(days=8):  # corners/cartons arrivent avec quelques jours de retard
                     p.result = "unverifiable"
                     p.settled_at = now
                     counts["unverifiable"] += 1

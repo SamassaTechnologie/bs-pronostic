@@ -36,6 +36,12 @@ def run_pipeline(db: Session, kinds=("history", "upcoming", "enrich"), force: bo
     try:
         _state.update(running=True, started_at=utcnow().isoformat(), step="synchronisation")
         sync = run_sync(db, kinds, force=force)
+        _state["step"] = "scores du jour"
+        from .live import refresh_scores
+        scores = refresh_scores(db)
+        sync.append({"provider": "football_data_org", "kind": "scores", "status": "ok" if scores.get("ok") else "error",
+                     "items": scores.get("updated", 0), "message": scores.get("error") or
+                     f"{scores.get('updated', 0)} résultat(s) final(aux) enregistré(s)"})
         _state["step"] = "analyse"
         analysis = run_analysis(db)
         _state["step"] = "règlement"

@@ -1,6 +1,7 @@
 import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { authEnabled, SUPABASE_KEY, SUPABASE_URL } from "./env";
 
 export async function supabaseServer() {
@@ -21,8 +22,8 @@ export async function supabaseServer() {
 
 export type Member = { id: string; email: string | null; name: string | null } | null;
 
-/** Utilisateur connecté (vérifié auprès de Supabase), ou null. */
-export async function currentMember(): Promise<Member> {
+/** Utilisateur connecté (vérifié auprès de Supabase), ou null. Mis en cache pour la durée d'une requête. */
+export const currentMember = cache(async (): Promise<Member> => {
   if (!authEnabled) return null;
   try {
     const sb = await supabaseServer();
@@ -33,4 +34,4 @@ export async function currentMember(): Promise<Member> {
   } catch {
     return null;
   }
-}
+});

@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const MEMBERS_ONLY = ["/pronostics", "/matchs", "/combines", "/compte"];
+const MEMBERS_ONLY = ["/pronostics", "/matchs", "/combines", "/compte", "/direct"];
 
 /** Rafraîchit la session Supabase et protège les pages réservées aux membres. */
 export async function proxy(request: NextRequest) {
@@ -20,8 +20,11 @@ export async function proxy(request: NextRequest) {
       },
     },
   });
-  const { data } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
+  const gated = MEMBERS_ONLY.some((p) => path === p || path.startsWith(`${p}/`));
+  // Vérification réseau uniquement là où elle sert (pages membres et accueil) : navigation plus rapide.
+  if (!gated && path !== "/") return response;
+  const { data } = await supabase.auth.getUser();
   if (!data.user && MEMBERS_ONLY.some((p) => path === p || path.startsWith(`${p}/`))) {
     const login = request.nextUrl.clone();
     login.pathname = "/connexion";

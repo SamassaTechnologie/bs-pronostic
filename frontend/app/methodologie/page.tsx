@@ -17,7 +17,7 @@ const STEPS: [string, string][] = [
 ];
 
 export default async function Methodologie() {
-  const meta = await backend<Meta>("/api/meta");
+  const meta = await backend<Meta>("/api/meta", { revalidate: 120 });
   const cal = meta.data?.calibration;
   const bench = cal?.market_benchmark;
   return (

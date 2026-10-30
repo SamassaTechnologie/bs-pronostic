@@ -220,3 +220,27 @@ def test_featured_selection(populated, client):
     assert perf["overall"]["total"] == len(feats)
     summary = client.get("/api/public-summary").json()
     assert summary["selection"]["total"] == len(feats) and summary["backtest"]["tiers"]
+
+
+def test_live_scores_update_results(populated, monkeypatch):
+    from app.providers.football_data_org import FootballDataOrg
+    from app.services.live import refresh_scores, _pick_state
+    with SessionLocal() as db:
+        m = db.scalars(select(Match).where(Match.status == "FINISHED").order_by(Match.kickoff.desc())).first()
+        hg, ag = m.home_goals, m.away_goals
+        m.status, m.home_goals, m.away_goals = "SCHEDULED", None, None
+        db.commit()
+        payload = [{"status": "FINISHED", "utcDate": m.kickoff.isoformat().replace("+00:00", "Z"),
+                    "competition": {"code": "PL"}, "homeTeam": {"name": m.home_team.name},
+                    "awayTeam": {"name": m.away_team.name},
+                    "score": {"fullTime": {"home": hg, "away": ag}, "halfTime": {"home": 0, "away": 0}}}]
+        monkeypatch.setattr(FootballDataOrg, "is_configured", lambda self: True)
+        monkeypatch.setattr(FootballDataOrg, "matches_between", lambda self, a, b: payload)
+        res = refresh_scores(db, now=m.kickoff + timedelta(hours=3))
+        assert res["ok"] and res["updated"] == 1
+        db.refresh(m)
+        assert m.status == "FINISHED" and (m.home_goals, m.away_goals) == (hg, ag)
+        p = Prediction(match_id=m.id, market_key="O0.5", market_label="+0,5", probability=0.9, confidence=80,
+                       confidence_level="Élevée", tier="A", engine_version="t")
+        assert _pick_state(p, m, {"home": 1, "away": 0}) == "Déjà validé"
+        assert _pick_state(p, m, {"home": 0, "away": 0}) == "En attente de buts"

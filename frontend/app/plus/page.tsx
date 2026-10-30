@@ -10,7 +10,7 @@ export const metadata = { title: "Plus" };
 
 export default async function Plus() {
   const tz = await userTz();
-  const meta = await backend<Meta>("/api/meta");
+  const meta = await backend<Meta>("/api/meta", { revalidate: 120 });
   const m = meta.data;
   return (
     <>

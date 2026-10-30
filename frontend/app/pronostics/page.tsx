@@ -33,7 +33,7 @@ export default async function Pronostics({ searchParams }: { searchParams: Promi
 
   const [res, meta] = await Promise.all([
     backend<{ count: number; items: Pick[] }>(`/api/predictions?${q}`),
-    backend<Meta>("/api/meta"),
+    backend<Meta>("/api/meta", { revalidate: 120 }),
   ]);
   const m = meta.data;
   const th = m ? [m.settings.tier_c, m.settings.tier_b, m.settings.tier_a] : undefined;
@@ -57,6 +57,9 @@ export default async function Pronostics({ searchParams }: { searchParams: Promi
       <div className="mb-4 flex flex-wrap gap-2">
         <Link href="/pronostics?best=1" className={`rounded-lg px-4 py-2.5 text-sm font-bold ${best ? "bg-pitch text-white" : "bg-night text-white"}`}>
           Trouver les meilleures opportunités
+        </Link>
+        <Link href="/combines" className="rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-bold text-night">
+          Générateur de combinés
         </Link>
         {(best || activeFilters > 0) && (
           <Link href="/pronostics" className="rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-semibold text-night">

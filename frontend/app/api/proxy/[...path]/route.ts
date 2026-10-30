@@ -3,9 +3,9 @@ import { BACKEND_URL } from "@/lib/api";
 import { currentMember } from "@/lib/supabase/server";
 import { authEnabled } from "@/lib/supabase/env";
 
-const MEMBERS_ONLY = [/^predictions$/, /^matches\/\d+$/, /^combos\//];
+const MEMBERS_ONLY = [/^live$/, /^predictions$/, /^matches\/\d+$/, /^combos\//];
 
-const GET_ALLOWED = [/^meta$/, /^predictions$/, /^matches(\/\d+)?$/, /^history$/, /^performance$/, /^calibration$/];
+const GET_ALLOWED = [/^live$/, /^recent-results$/, /^meta$/, /^predictions$/, /^matches(\/\d+)?$/, /^history$/, /^performance$/, /^calibration$/];
 const POST_ALLOWED = [/^combos\/generate$/, /^combos\/evaluate$/];
 
 async function forward(req: NextRequest, path: string[], method: "GET" | "POST") {
