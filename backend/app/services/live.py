@@ -62,7 +62,9 @@ def refresh_scores(db: Session, now: Optional[datetime] = None, days_back: int =
     if not comps:
         return {"ok": True, "live": [], "updated": 0}
     try:
-        rows = fo.matches_between((now - timedelta(days=days_back)).date().isoformat(), now.date().isoformat())
+        # dateTo est exclusif côté football-data.org : on demande jusqu'au lendemain.
+        rows = fo.matches_between((now - timedelta(days=days_back)).date().isoformat(),
+                                  (now + timedelta(days=1)).date().isoformat())
     except ProviderError as exc:
         return {"ok": False, "error": str(exc), "live": [], "updated": 0}
     updated, live = 0, []

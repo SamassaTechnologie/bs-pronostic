@@ -450,7 +450,7 @@ def _fo_upcoming(db: Session, fo: FootballDataOrg, comps: list[Competition], now
         indexes: dict[int, MatchIndex] = {}
         n = 0
         d_from = (now - timedelta(days=1)).date().isoformat()
-        d_to = (now + timedelta(days=days_ahead)).date().isoformat()
+        d_to = (now + timedelta(days=days_ahead + 1)).date().isoformat()  # dateTo exclusif
         for m in fo.matches_between(d_from, d_to):
             comp = by_code.get((m.get("competition") or {}).get("code"))
             if comp is None:
