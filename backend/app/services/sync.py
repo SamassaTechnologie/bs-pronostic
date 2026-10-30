@@ -319,9 +319,17 @@ def _af_fixtures(db: Session, af: ApiFootball, comps: list[Competition], now: da
         resolver = TeamResolver(db)
         indexes: dict[int, MatchIndex] = {}
         created, linked = 0, 0
+        skipped: list[str] = []
         for d in range(-1, days_ahead + 1):
             day = (now + timedelta(days=d)).date().isoformat()
-            for fx in af.fixtures_by_date(day):
+            try:
+                fixtures = af.fixtures_by_date(day)
+            except ProviderError as exc:
+                if "quota" in str(exc).lower() or "budget" in str(exc).lower():
+                    raise
+                skipped.append(f"{day} ({exc})")  # ex. plan gratuit limité à hier → demain
+                continue
+            for fx in fixtures:
                 comp = by_league.get((fx.get("league") or {}).get("id"))
                 if comp is None:
                     continue
@@ -335,7 +343,12 @@ def _af_fixtures(db: Session, af: ApiFootball, comps: list[Competition], now: da
                 elif link_fixture(db, comp, rec):
                     linked += 1
             db.commit()
-        return created + linked, f"{created} matchs mis à jour, {linked} rattachés ({af.requests_made} requêtes)"
+        msg = f"{created} matchs mis à jour, {linked} rattachés ({af.requests_made} requêtes)"
+        if skipped:
+            msg += f" ; dates non couvertes par le plan : {len(skipped)} — " + skipped[0]
+            if created + linked == 0 and len(skipped) == days_ahead + 2:
+                raise ProviderError(msg)
+        return created + linked, msg
 
     return _run(db, af.name, "calendrier", work)
 
@@ -371,9 +384,17 @@ def _af_enrich(db: Session, af: ApiFootball, now: datetime, max_fixtures: int) -
             Match.kickoff >= now, Match.kickoff <= now + timedelta(hours=48))
             .order_by(Match.kickoff)).unique().all()
         todo = [m for m in ms if m.enriched_at is None or m.enriched_at < now - timedelta(hours=12)][:max_fixtures]
-        n_inj, n_odds = 0, 0
+        n_inj, n_odds, done, errors = 0, 0, 0, []
         for m in todo:
-            injuries = af.injuries_for_fixture(m.api_football_fixture_id)
+            try:
+                injuries = af.injuries_for_fixture(m.api_football_fixture_id)
+                odds = af.odds_for_fixture(m.api_football_fixture_id)
+            except ProviderError as exc:
+                db.rollback()
+                errors.append(str(exc))
+                if "budget" in str(exc).lower():
+                    break
+                continue
             db.execute(delete(Injury).where(Injury.match_id == m.id, Injury.source == af.name))
             for inj in injuries:
                 team_id = (m.home_team_id if (inj.team_ext_id and inj.team_ext_id == m.home_team.api_football_id)
@@ -381,11 +402,16 @@ def _af_enrich(db: Session, af: ApiFootball, now: datetime, max_fixtures: int) -
                 db.add(Injury(match_id=m.id, team_id=team_id, player=inj.player, kind=inj.kind,
                               reason=inj.reason, source=af.name))
             n_inj += len(injuries)
-            odds = af.odds_for_fixture(m.api_football_fixture_id)
             n_odds += save_odds(db, m.id, odds, af.name)
             m.enriched_at = utcnow()
             db.commit()
-        return len(todo), f"{len(todo)} matchs enrichis : {n_inj} absences, {n_odds} cotes ({af.requests_made} requêtes)"
+            done += 1
+        msg = f"{done} matchs enrichis : {n_inj} absences, {n_odds} cotes ({af.requests_made} requêtes)"
+        if errors:
+            msg += f" ; {len(errors)} échec(s) : {errors[0]}"
+            if done == 0:
+                raise ProviderError(msg)
+        return done, msg
 
     return _run(db, af.name, "blessures-cotes", work)
 

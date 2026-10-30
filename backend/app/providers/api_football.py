@@ -12,6 +12,8 @@ l'administration (aucune donnée n'est simulée).
 from __future__ import annotations
 
 import re
+import time
+from collections import deque
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -74,13 +76,25 @@ class ApiFootball(Provider):
     website = "https://www.api-football.com"
     capabilities = ("calendrier", "résultats", "blessures", "cotes multi-marchés", "statistiques de match")
 
+    _calls: deque = deque(maxlen=9)
+
     def is_configured(self) -> bool:
         return bool(self.settings.api_football_key)
+
+    def _throttle(self) -> None:
+        # Plan gratuit : 10 requêtes/minute. On reste à 9 par fenêtre glissante de 60 s.
+        if len(self._calls) == self._calls.maxlen:
+            wait = 61 - (time.monotonic() - self._calls[0])
+            if wait > 0:
+                time.sleep(wait)
+        self._calls.append(time.monotonic())
 
     def _get(self, path: str, params: Optional[dict] = None, count: bool = True) -> dict:
         if not self.is_configured():
             raise ProviderError("API-Football : clé API absente (variable API_FOOTBALL_KEY)")
         url = self.settings.api_football_base_url.rstrip("/") + path
+        if count:
+            self._throttle()
         r = self._request(url, headers={"x-apisports-key": self.settings.api_football_key}, params=params,
                           count=count)
         if r.status_code >= 400:
