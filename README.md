@@ -133,6 +133,18 @@ Générer des secrets : `python -c "import secrets; print(secrets.token_urlsafe(
 
 ---
 
+## Version publique (comptes gratuits)
+
+- **Visiteurs** : page de présentation, résultats vérifiés (`/historique`), méthodologie.
+- **Membres** (inscription gratuite, Supabase Auth) : Sélection SAM du jour, pronostics détaillés, fiches match,
+  combinés, suivi de favoris (`public.user_follows`, protégé par RLS), partage natif.
+- **Consensus modèle + marché** : quand une cote existe, la probabilité affichée combine le modèle (20 %) et les
+  cotes sans marge (80 %), poids choisi par backtest (Brier 1X2 : 0,2019 → 0,1981).
+- **Sélection SAM du jour** : 5 pronostics maximum par jour, probabilité ≥ 75 %, confiance ≥ 70/100, cote juste ≥ 1,15,
+  un par match ; bilan publié séparément.
+- Variables Vercel supplémentaires : `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+- Supabase → Authentication → URL Configuration : *Site URL* = l'adresse du site, *Redirect URLs* = `https://VOTRE-SITE/auth/callback`.
+
 ## 5. Sécurité
 
 - Clés API uniquement dans les variables d'environnement du backend ; jamais transmises au navigateur.
