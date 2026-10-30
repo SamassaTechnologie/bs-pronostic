@@ -182,12 +182,7 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
                 continue
             if day_counts[m.kickoff.date()] >= int(s["max_daily_picks"]):
                 continue
-            db.add(Prediction(
-                created_at=now, match_id=m.id, market_key=mk["key"], market_label=mk["label"],
-                probability=mk["probability"], confidence=mk["confidence"]["score"],
-                confidence_level=mk["confidence"]["level"], tier=mk["tier"], odds=mk.get("odds"),
-                bookmaker=mk.get("bookmaker"), implied_probability=mk.get("implied_probability"),
-                engine_version=ENGINE_VERSION, explanation=mk.get("explanation")))
+            db.add(_new_prediction(m, mk, now))
             existing.add((m.id, mk["key"]))
             day_counts[m.kickoff.date()] += 1
             published += 1
@@ -196,6 +191,15 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
     return {"analysed": stats["analysed"], "ok": stats["ok"], "insufficient": stats["insufficient"],
             "competitions": len(by_comp), "published": published, "featured": featured,
             "computed_at": now.isoformat()}
+
+
+def _new_prediction(m: Match, mk: dict, now: datetime) -> Prediction:
+    return Prediction(
+        created_at=now, match_id=m.id, market_key=mk["key"], market_label=mk["label"],
+        probability=mk["probability"], confidence=mk["confidence"]["score"],
+        confidence_level=mk["confidence"]["level"], tier=mk["tier"], odds=mk.get("odds"),
+        bookmaker=mk.get("bookmaker"), implied_probability=mk.get("implied_probability"),
+        engine_version=ENGINE_VERSION, explanation=mk.get("explanation"))
 
 
 def featured_eligible(mk: dict, s: dict) -> bool:
@@ -234,7 +238,10 @@ def select_featured(db: Session, candidates: list, s: dict, now: datetime) -> in
         if m.id in featured_matches or per_day[day] >= int(s["featured_max_per_day"]):
             continue
         pred = db.scalar(select(Prediction).where(Prediction.match_id == m.id, Prediction.market_key == mk["key"]))
-        if pred is None or pred.result != "pending":
+        if pred is None:  # la Sélection est toujours publiée, même si le quota quotidien est atteint
+            pred = _new_prediction(m, mk, now)
+            db.add(pred)
+        elif pred.result != "pending":
             continue
         pred.featured = True
         pred.featured_at = now
