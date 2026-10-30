@@ -1,0 +1,30 @@
+# Blueprint Render : backend FastAPI (moteur statistique).
+# Render > New > Blueprint > sélectionnez ce dépôt GitHub.
+services:
+  - type: web
+    name: sam-prediction-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: frankfurt
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false            # à coller depuis Supabase
+      - key: ADMIN_API_TOKEN
+        generateValue: true
+      - key: CRON_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        sync: false
+      - key: API_FOOTBALL_KEY
+        sync: false
+      - key: FOOTBALL_DATA_ORG_KEY
+        sync: false
+      - key: ENABLE_SCHEDULER
+        value: "true"
+      - key: SYNC_INTERVAL_MINUTES
+        value: "180"
+      - key: DEFAULT_TIMEZONE
+        value: Africa/Bamako

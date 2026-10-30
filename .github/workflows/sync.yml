@@ -1,0 +1,17 @@
+# Déclenche la synchronisation toutes les 3 heures (réveille aussi le service gratuit de Render).
+# Secrets GitHub requis : BACKEND_URL (ex. https://sam-prediction-api.onrender.com) et CRON_SECRET.
+name: Synchronisation planifiée
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  workflow_dispatch:
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Réveil du backend
+        run: curl -sS --retry 5 --retry-delay 20 --max-time 90 "${{ secrets.BACKEND_URL }}/api/health"
+      - name: Lancement de la synchronisation
+        run: |
+          curl -sS --fail --max-time 60 -X POST "${{ secrets.BACKEND_URL }}/api/cron/run" \
+            -H "X-Cron-Secret: ${{ secrets.CRON_SECRET }}"
