@@ -117,7 +117,16 @@ Le modèle exige au moins 60 matchs terminés dans la compétition et 6 par équ
 2. **Supabase** : créez un projet (région Europe). *Project Settings → Database → Connection string → Session pooler* : copiez l'URI (compatible IPv4) et remplacez le mot de passe.
 3. **Render** : *New → Blueprint*, choisissez le dépôt (fichier `render.yaml`). Renseignez `DATABASE_URL` (URI Supabase), `CORS_ORIGINS` (URL Vercel) et, si vous les avez, les clés API. `ADMIN_API_TOKEN` et `CRON_SECRET` sont générés : notez-les. Vérifiez `https://VOTRE-API.onrender.com/api/health`.
 4. **Vercel** : *Add New → Project*, même dépôt, *Root Directory* = `frontend`. Variables : `BACKEND_URL` (URL Render), `BACKEND_ADMIN_TOKEN` (= `ADMIN_API_TOKEN`), `ADMIN_PASSWORD` (votre mot de passe d'administration), `SESSION_SECRET` (32 caractères aléatoires).
-5. **Synchronisation planifiée** : le plan gratuit de Render met le service en veille après inactivité ; le workflow `.github/workflows/sync.yml` le réveille et lance la synchronisation toutes les 3 heures. Ajoutez les secrets GitHub `BACKEND_URL` et `CRON_SECRET` (*Settings → Secrets and variables → Actions*).
+5. **Synchronisation planifiée** : le plan gratuit de Render met le service en veille après inactivité. Dans Supabase, deux tâches `pg_cron` réveillent le backend puis appellent `/api/cron/run` toutes les 3 heures (`sam-wake` à hh:10, `sam-sync` à hh:15, avec l'en-tête `X-Cron-Secret`). Le workflow GitHub `sync.yml` reste disponible pour un lancement manuel (secrets `BACKEND_URL` et `CRON_SECRET`).
+
+### Déploiement en service
+
+| Élément | Valeur |
+|---|---|
+| Site | https://sam-prediction.vercel.app (projet Vercel `sam-prediction`, dossier `frontend`) |
+| API | https://sam-prediction-api.onrender.com (service Render `sam-prediction-api`, Frankfurt) |
+| Base | Supabase `sam-prediction` (Paris), rôle dédié `sam_app`, schéma `sam` non exposé par l'API publique |
+| Connexion | pooler Supabase en mode session : `aws-1-eu-west-3.pooler.supabase.com:5432` |
 6. **iPhone** : ouvrez l'URL Vercel dans Safari → Partager → « Sur l'écran d'accueil ».
 
 Générer des secrets : `python -c "import secrets; print(secrets.token_urlsafe(32))"`.
