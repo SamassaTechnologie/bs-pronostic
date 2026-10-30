@@ -9,7 +9,7 @@ from rapidfuzz import fuzz
 
 STOPWORDS = {
     "fc", "cf", "afc", "sc", "ac", "club", "cd", "ud", "sd", "rc", "ssc", "us", "sv", "fk", "sk", "bk",
-    "the", "de", "calcio", "ssd", "asd", "cfc", "kv", "krc", "rsc", "1", "sl", "ca",
+    "the", "de", "calcio", "ssd", "asd", "cfc", "kv", "krc", "rsc", "1", "sl", "ca", "osc", "ogc", "sco", "aj",
 }
 
 # Abréviations de football-data.co.uk et variantes courantes -> forme canonique
@@ -31,6 +31,23 @@ ALIASES = {
     "milan": "ac milan", "verona": "hellas verona", "inter milan": "inter", "internazionale": "inter",
     "sp lisbon": "sporting cp", "sporting lisbon": "sporting cp", "sp braga": "braga", "sporting braga": "braga",
     "for sittard": "fortuna sittard", "nijmegen": "nec nijmegen", "psv eindhoven": "psv",
+    # Noms longs de football-data.org
+    "stade rennais 1901": "rennes", "stade rennais": "rennes", "ogc nice": "nice", "olympique lyonnais": "lyon",
+    "olympique de marseille": "marseille", "strasbourg alsace": "strasbourg", "racing club de lens": "lens",
+    "racing lens": "lens", "lille osc": "lille", "stade brestois 29": "brest", "stade brestois": "brest",
+    "monaco": "monaco", "aj auxerre": "auxerre", "angers sco": "angers", "toulouse": "toulouse",
+    "havre": "le havre", "le havre ac": "le havre", "espanyol de barcelona": "espanyol",
+    "rcd espanyol de barcelona": "espanyol", "villarreal": "villarreal", "real betis balompie": "real betis",
+    "club atletico de madrid": "atletico madrid", "atletico de madrid": "atletico madrid",
+    "rcd mallorca": "mallorca", "real valladolid": "valladolid", "sv 07 elversberg": "elversberg",
+    "1 fsv mainz 05": "mainz", "fsv mainz 05": "mainz", "mainz 05": "mainz", "tsg 1899 hoffenheim": "hoffenheim",
+    "bayer 04 leverkusen": "bayer leverkusen", "vfb stuttgart": "stuttgart", "vfl wolfsburg": "wolfsburg",
+    "borussia monchengladbach": "borussia monchengladbach", "1 fc union berlin": "union berlin",
+    "1 fc heidenheim 1846": "heidenheim", "hamburger sv": "hamburg", "werder bremen": "werder bremen",
+    "sport lisboa e benfica": "benfica", "sporting clube de portugal": "sporting cp", "fc porto": "porto",
+    "casa pia ac": "casa pia", "manchester united": "manchester united", "brighton hove albion": "brighton",
+    "wolverhampton wanderers": "wolverhampton wanderers", "nottingham forest": "nottingham forest",
+    "afc bournemouth": "bournemouth", "sheffield united": "sheffield united", "wrexham": "wrexham",
 }
 
 

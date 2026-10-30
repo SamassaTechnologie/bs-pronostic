@@ -42,12 +42,18 @@ def _find_match(db: Session, comps: dict, m: dict) -> Optional[Match]:
     cands = db.scalars(select(Match).where(Match.competition_id.in_(comp_ids),
                                            Match.kickoff >= ko - timedelta(hours=30),
                                            Match.kickoff <= ko + timedelta(hours=30))).unique().all()
-    best, score = None, 0.0
-    for c in cands:
-        s = min(similarity(home, c.home_team.name), similarity(away, c.away_team.name))
-        if s > score:
-            best, score = c, s
-    return best if score >= 78 else None
+    scored = sorted(((min(similarity(home, c.home_team.name), similarity(away, c.away_team.name)), c) for c in cands),
+                    key=lambda t: t[0], reverse=True)
+    if not scored:
+        return None
+    best_score, best = scored[0]
+    if best_score >= 78:
+        return best
+    # Même compétition, même heure de coup d'envoi : on accepte un nom moins proche s'il se détache nettement.
+    same_time = [(sc, c) for sc, c in scored if abs((c.kickoff - ko).total_seconds()) <= 300]
+    if same_time and same_time[0][0] >= 45 and (len(same_time) == 1 or same_time[0][0] - same_time[1][0] >= 15):
+        return same_time[0][1]
+    return None
 
 
 def refresh_scores(db: Session, now: Optional[datetime] = None, days_back: int = 2) -> dict:
