@@ -8,7 +8,9 @@ import { CompactPick, List, MatchRow } from "@/components/Rows";
 import { Empty, ErrorBox, MoreLink, ProbBar, Section, Stat } from "@/components/ui";
 import { Landing } from "@/components/Landing";
 import { currentMember } from "@/lib/supabase/server";
-import type { HistoryRow } from "@/lib/types";
+import type { Combo, HistoryRow } from "@/lib/types";
+import { ComboView } from "@/components/ComboBuilder";
+import { num } from "@/lib/format";
 import { kickoffLabel, RESULT_LABEL } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -21,8 +23,12 @@ type Dashboard = {
     matches_analysed: number; matches_today: number; picks: number; competitions: number; insufficient: number;
     history_total: number; history_hit_rate: number | null; history_roi: number | null; history_settled: number;
     selection_settled: number; selection_hit_rate: number | null; selection_roi: number | null;
+    value_settled: number; value_hit_rate: number | null; value_roi: number | null; value_avg_probability: number | null;
   };
   selection: Pick[];
+  value_picks: Pick[];
+  value_settings: { value_min_odds: number; value_max_odds: number; value_min_probability: number; value_min_confidence: number; value_max_per_day: number };
+  combo_of_day: Combo[];
   today_matches: { match: MatchSummary; status: string; n_picks: number; match_confidence: number; avoid: boolean }[];
   best_today: Pick[];
   by_probability: Pick[];
@@ -91,6 +97,41 @@ export default async function Home() {
           <Empty title="Aucun pronostic n'atteint les critères de la sélection pour le moment">
             Mieux vaut ne rien proposer qu&apos;un pronostic fragile. Les autres sélections restent consultables ci-dessous.
           </Empty>
+        )}
+      </Section>
+
+      <Section title="Pronostics à cote" action={<MoreLink href="/historique?cote=1">Bilan</MoreLink>}>
+        <p className="-mt-1 mb-3 px-1 text-sm text-steel">
+          Cote d&apos;environ {num(d.value_settings.value_min_odds)} à {num(d.value_settings.value_max_odds)}, probabilité d&apos;au
+          moins {pct(d.value_settings.value_min_probability)}, confiance d&apos;au moins {d.value_settings.value_min_confidence}/100 et
+          modèle d&apos;accord avec le marché. Plus rémunérateurs, donc un peu moins sûrs que la Sélection SAM.
+          {d.stats.value_settled
+            ? ` Bilan réel : ${pct(d.stats.value_hit_rate)} sur ${d.stats.value_settled} pronostics réglés.`
+            : ""}
+        </p>
+        {d.value_picks.length ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {d.value_picks.map((p) => (
+              <PickCard key={`v-${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} />
+            ))}
+          </div>
+        ) : (
+          <Empty title="Aucun pronostic à cote ne remplit les critères pour le moment" />
+        )}
+      </Section>
+
+      <Section title="Combiné cote 2 du jour" action={<MoreLink href="/combines">Autre cote</MoreLink>}>
+        <p className="-mt-1 mb-3 px-1 text-sm text-steel">
+          2 ou 3 matchs au lieu de 8 à 10 : la même cote avec moins de risques de surprise. Matchs des 36 prochaines heures.
+        </p>
+        {d.combo_of_day.length ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {d.combo_of_day.map((c, i) => (
+              <ComboView key={i} c={c} tz={tz} title={i === 0 ? `Combiné principal : ${c.n_legs} matchs` : `Alternative : ${c.n_legs} matchs`} />
+            ))}
+          </div>
+        ) : (
+          <Empty title="Pas de combinaison assez solide pour atteindre une cote de 2 en ce moment" />
         )}
       </Section>
 

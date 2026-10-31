@@ -47,6 +47,8 @@ export default async function Pronostics({ searchParams }: { searchParams: Promi
   if (one(sp, "min_conf")) q.set("min_conf", one(sp, "min_conf"));
   if (one(sp, "all") === "1") q.set("all_markets", "true");
   if (best) q.set("best", "true");
+  const cote = one(sp, "cote") === "1";
+  if (cote) q.set("value_only", "true");
 
   const [res, meta] = await Promise.all([
     backend<{ count: number; items: Pick[] }>(`/api/predictions?${q}`),
@@ -74,6 +76,9 @@ export default async function Pronostics({ searchParams }: { searchParams: Promi
       <div className="mb-4 flex flex-wrap gap-2">
         <Link href="/pronostics?best=1" className={`rounded-lg px-4 py-2.5 text-sm font-bold ${best ? "bg-pitch text-white" : "bg-night text-white"}`}>
           Trouver les meilleures opportunités
+        </Link>
+        <Link href={cote ? "/pronostics" : "/pronostics?cote=1"} className={`rounded-lg px-4 py-2.5 text-sm font-bold ${cote ? "bg-amber text-white" : "border border-line bg-white text-night"}`}>
+          {cote ? "Pronostics à cote ✓" : "Pronostics à cote"}
         </Link>
         <Link href="/combines" className="rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-bold text-night">
           Générateur de combinés

@@ -4,7 +4,7 @@ import { kickoffLabel, pct } from "@/lib/format";
 import { ConfidenceBadge, OddsInfo, ProbBar, TierBadge } from "./ui";
 import { PickActions } from "./Follows";
 
-export function PickCard({ pick, tz, thresholds, rank }: { pick: Pick; tz: string; thresholds?: number[]; rank?: number }) {
+export function PickCard({ pick, tz, thresholds, rank, showFair = true }: { pick: Pick; tz: string; thresholds?: number[]; rank?: number; showFair?: boolean }) {
   const m = pick.match;
   return (
     <article className="rounded-xl border border-line bg-white">
@@ -30,13 +30,14 @@ export function PickCard({ pick, tz, thresholds, rank }: { pick: Pick; tz: strin
           <div className="shrink-0 text-right">
             <div className="font-display text-3xl font-bold tracking-tight text-night">{pct(pick.probability)}</div>
             {pick.featured && <div className="text-[11px] font-bold text-pitch-deep">Sélection SAM</div>}
+            {pick.value_pick && !pick.featured && <div className="text-[11px] font-bold text-amber">Pronostic à cote</div>}
           </div>
         </div>
         <div className="mt-2.5">
           <ProbBar p={pick.probability} thresholds={thresholds} />
         </div>
         <div className="mt-2 flex items-center justify-between gap-2">
-          <OddsInfo odds={pick.odds} edge={pick.edge} bookmaker={pick.bookmaker} />
+          <OddsInfo odds={pick.odds} edge={pick.edge} bookmaker={pick.bookmaker} fair={showFair ? pick.fair_odds : null} />
           {pick.implied_probability !== null && (
             <span className="text-xs text-steel">Marché {pct(pick.implied_probability)}</span>
           )}

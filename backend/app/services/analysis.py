@@ -13,6 +13,7 @@ from ..engine.calibration import calibrators_from_dict, load_default_calibration
 from ..engine.features import TeamHistory, standings
 from ..engine.predictor import ENGINE_VERSION, EngineParams, FixtureContext, analyze_fixture, fit_league_models
 from ..engine.types import MatchData, OddsInfo
+from ..engine.value import best_value_per_match, value_score
 from ..models import Analysis, Calibration, Competition, Injury, Match, OddsQuote, Prediction, utcnow
 from .settings_service import get_selection_settings
 from .sync import last_successful_sync
@@ -119,6 +120,7 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
         by_comp[m.competition_id].append(m)
     stats = Counter()
     candidates: list[tuple[float, Match, dict]] = []
+    value_cands: list[tuple[float, Match, dict]] = []
     for comp_id, ms in by_comp.items():
         since = now - timedelta(days=params.window_days + 30)
         rows = db.scalars(select(Match).where(Match.competition_id == comp_id, Match.status == "FINISHED",
@@ -167,6 +169,10 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
             for key in payload["picks"]:
                 mk = next(x for x in payload["markets"] if x["key"] == key)
                 candidates.append((mk["score"], m, mk))
+            if payload["status"] == "ok" and not payload.get("avoid_reasons"):
+                vmk = best_value_per_match(payload["markets"], s)
+                if vmk is not None:
+                    value_cands.append((value_score(vmk), m, vmk))
         db.commit()
 
     published = 0
@@ -188,8 +194,9 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
             published += 1
         db.commit()
     featured = select_featured(db, candidates, s, now) if publish and candidates else 0
+    value = select_value_picks(db, value_cands, s, now) if publish and value_cands else 0
     return {"analysed": stats["analysed"], "ok": stats["ok"], "insufficient": stats["insufficient"],
-            "competitions": len(by_comp), "published": published, "featured": featured,
+            "competitions": len(by_comp), "published": published, "featured": featured, "value_picks": value,
             "computed_at": now.isoformat()}
 
 
@@ -245,6 +252,39 @@ def select_featured(db: Session, candidates: list, s: dict, now: datetime) -> in
             continue
         pred.featured = True
         pred.featured_at = now
+        per_day[day] += 1
+        n += 1
+    db.commit()
+    return n
+
+
+def select_value_picks(db: Session, candidates: list, s: dict, now: datetime) -> int:
+    """Pronostics à cote : au plus N par jour (un par match), cote 1,40-2,20 environ, figés avant le match."""
+    best = {m.id: (score, m, mk) for score, m, mk in candidates if m.kickoff > now + timedelta(minutes=10)}
+    if not best:
+        return 0
+    days = {m.kickoff.date() for _, m, _ in best.values()}
+    per_day = Counter()
+    for p in db.scalars(select(Prediction).join(Match, Prediction.match_id == Match.id).where(
+            Prediction.value_pick.is_(True), Match.kickoff >= now - timedelta(days=2))).unique():
+        if p.match.kickoff.date() in days:
+            per_day[p.match.kickoff.date()] += 1
+    already = {p.match_id for p in db.scalars(select(Prediction).where(
+        Prediction.value_pick.is_(True), Prediction.match_id.in_(list(best)))).unique()}
+    n = 0
+    per_market = Counter()  # diversité : au plus 2 fois le même marché par jour
+    for score, m, mk in sorted(best.values(), key=lambda t: t[0], reverse=True):
+        day = m.kickoff.date()
+        if m.id in already or per_day[day] >= int(s["value_max_per_day"]) or per_market[(day, mk["key"])] >= 2:
+            continue
+        per_market[(day, mk["key"])] += 1
+        pred = db.scalar(select(Prediction).where(Prediction.match_id == m.id, Prediction.market_key == mk["key"]))
+        if pred is None:
+            pred = _new_prediction(m, mk, now)
+            db.add(pred)
+        elif pred.result != "pending":
+            continue
+        pred.value_pick = True
         per_day[day] += 1
         n += 1
     db.commit()

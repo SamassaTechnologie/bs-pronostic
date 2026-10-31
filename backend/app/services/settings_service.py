@@ -18,6 +18,8 @@ BOUNDS = {
     "avoid_confidence_below": (0, 100),
     "featured_min_probability": (0.5, 0.99), "featured_min_confidence": (0, 100), "featured_max_per_day": (0, 20),
     "featured_min_fair_odds": (1.0, 3.0), "market_divergence_alert": (0.05, 0.5),
+    "value_min_odds": (1.2, 3.0), "value_max_odds": (1.3, 5.0), "value_min_probability": (0.35, 0.8),
+    "value_min_confidence": (0, 100), "value_max_per_day": (0, 20), "value_max_disagreement": (0.02, 0.3),
 }
 
 

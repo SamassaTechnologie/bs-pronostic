@@ -35,6 +35,9 @@ export type PickCard = {
   score: number | null;
   is_pick: boolean;
   featured?: boolean;
+  value_pick?: boolean;
+  reference_odds?: number;
+  bookmaker_odds?: boolean;
   model_probability?: number;
   consensus?: boolean;
 };
@@ -186,6 +189,9 @@ export type Combo = {
   independent?: boolean;
   warnings: string[];
   errors: string[];
+  reference_odds?: number;
+  all_bookmaker_odds?: boolean;
+  legs_reference?: { odds: number; bookmaker: boolean }[];
 };
 
 export type MatchAnalysisSummary = {

@@ -51,16 +51,18 @@ function Breakdown({ rows }: { rows: GroupStat[] }) {
   );
 }
 
-export default async function Historique({ searchParams }: { searchParams: Promise<{ page?: string; resultat?: string; selection?: string }> }) {
+export default async function Historique({ searchParams }: { searchParams: Promise<{ page?: string; resultat?: string; selection?: string; cote?: string }> }) {
   const sp = await searchParams;
   const sel = sp.selection === "1";
-  const fq = sel ? "featured=true" : "";
+  const cote = !sel && sp.cote === "1";
+  const fq = sel ? "featured=true" : cote ? "value=true" : "";
+  const keep = sel ? "&selection=1" : cote ? "&cote=1" : "";
   const tz = await userTz();
   const page = Math.max(0, Number(sp.page || 0));
   const filter = sp.resultat && RESULT_LABEL[sp.resultat] ? sp.resultat : "";
   const [perf, hist] = await Promise.all([
     backend<Performance>(`/api/performance?${fq}`),
-    backend<{ total: number; items: HistoryRow[] }>(`/api/history?limit=30&offset=${page * 30}${filter ? `&result=${filter}` : ""}${sel ? "&featured=true" : ""}`),
+    backend<{ total: number; items: HistoryRow[] }>(`/api/history?limit=30&offset=${page * 30}${filter ? `&result=${filter}` : ""}${fq ? `&${fq}` : ""}`),
   ]);
   if (!perf.ok) return <ErrorBox message={perf.error} />;
   const p = perf.data;
@@ -76,12 +78,15 @@ export default async function Historique({ searchParams }: { searchParams: Promi
         </p>
       </div>
 
-      <div className="mb-4 grid grid-cols-2 gap-1 rounded-lg bg-white p-1" role="tablist">
+      <div className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-white p-1" role="tablist">
         <Link href="/historique?selection=1" role="tab" aria-selected={sel} className={`rounded-md py-2 text-center text-sm font-bold ${sel ? "bg-night text-white" : "text-steel"}`}>
           Sélection SAM
         </Link>
-        <Link href="/historique" role="tab" aria-selected={!sel} className={`rounded-md py-2 text-center text-sm font-bold ${!sel ? "bg-night text-white" : "text-steel"}`}>
-          Tous les pronostics
+        <Link href="/historique?cote=1" role="tab" aria-selected={cote} className={`rounded-md py-2 text-center text-sm font-bold ${cote ? "bg-night text-white" : "text-steel"}`}>
+          À cote
+        </Link>
+        <Link href="/historique" role="tab" aria-selected={!sel && !cote} className={`rounded-md py-2 text-center text-sm font-bold ${!sel && !cote ? "bg-night text-white" : "text-steel"}`}>
+          Tous
         </Link>
       </div>
       <div className="grid grid-cols-2 gap-2.5 md:grid-cols-4">
@@ -147,7 +152,7 @@ export default async function Historique({ searchParams }: { searchParams: Promi
       <Section title="Tous les pronostics">
         <div className="scroll-x mb-3 flex gap-1.5">
           {[["", "Tous"], ["won", "Gagnés"], ["lost", "Perdus"], ["pending", "En attente"]].map(([v, l]) => (
-            <Link key={v} href={`/historique?${new URLSearchParams({ ...(v ? { resultat: v } : {}), ...(sel ? { selection: "1" } : {}) })}`} className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold ${filter === v ? "bg-night text-white" : "bg-white text-night"}`}>
+            <Link key={v} href={`/historique?${new URLSearchParams({ ...(v ? { resultat: v } : {}), ...(sel ? { selection: "1" } : {}), ...(cote ? { cote: "1" } : {}) })}`} className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold ${filter === v ? "bg-night text-white" : "bg-white text-night"}`}>
               {l}
             </Link>
           ))}
@@ -174,8 +179,8 @@ export default async function Historique({ searchParams }: { searchParams: Promi
               ))}
             </div>
             <div className="mt-3 flex justify-between text-sm font-semibold">
-              {page > 0 ? <Link href={`/historique?page=${page - 1}${filter ? `&resultat=${filter}` : ""}${sel ? "&selection=1" : ""}`} className="text-sky">Plus récents</Link> : <span />}
-              {(page + 1) * 30 < hist.data.total && <Link href={`/historique?page=${page + 1}${filter ? `&resultat=${filter}` : ""}${sel ? "&selection=1" : ""}`} className="text-sky">Plus anciens</Link>}
+              {page > 0 ? <Link href={`/historique?page=${page - 1}${filter ? `&resultat=${filter}` : ""}${keep}`} className="text-sky">Plus récents</Link> : <span />}
+              {(page + 1) * 30 < hist.data.total && <Link href={`/historique?page=${page + 1}${filter ? `&resultat=${filter}` : ""}${keep}`} className="text-sky">Plus anciens</Link>}
             </div>
           </>
         ) : (

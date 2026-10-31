@@ -307,3 +307,33 @@ def test_match_insights_and_trends(client):
     assert all(t["text"] and 0 <= t["strength"] <= 2 for t in d["trends"])
     assert client.get(f"/api/matches/{mid}/live").json()["state"]
     assert client.get("/api/matches/999999/insights").status_code == 404
+
+
+def test_value_picks_and_target_combos(populated, client):
+    from app.engine.combos import Leg
+    from app.engine.value import naive_equivalent, short_equivalent, target_combos
+    with SessionLocal() as db:
+        vals = db.scalars(select(Prediction).where(Prediction.value_pick.is_(True))).all()
+        assert vals, "aucun pronostic à cote publié"
+        for p in vals:
+            ref = p.odds or 1 / p.probability
+            assert 1.40 <= ref <= 2.20 and p.probability >= 0.52 and p.confidence >= 60
+            assert p.market_key not in ("X", "HT_X", "HT_1", "HT_2")
+        assert len({p.match_id for p in vals}) == len(vals)
+    assert client.get("/api/performance", params={"value": True}).json()["overall"]["total"] == len(vals)
+    dash = client.get("/api/dashboard").json()
+    assert "value_picks" in dash and "combo_of_day" in dash
+
+    r = client.post("/api/combos/target", json={"target": 2.0, "max_legs": 3, "hours": 72}).json()
+    assert r["combos"], r["message"]
+    for c in r["combos"]:
+        assert 2 <= c["n_legs"] <= 3 and c["valid"]
+        assert 1.84 <= c["reference_odds"] <= 2.7
+        assert len({l["match_id"] for l in c["legs"]}) == c["n_legs"]
+    assert r["comparison"]["long"]["legs"] == 8 and r["comparison"]["short"]["probability"] > r["comparison"]["long"]["probability"]
+
+    # Synthétique : la combinaison retenue privilégie la plus forte chance de passer.
+    legs = [Leg(i, "1", "Victoire", p, 75, odds=o) for i, (p, o) in enumerate([(0.68, 1.40), (0.66, 1.45), (0.40, 2.3), (0.9, 1.05)])]
+    best = target_combos(legs, 2.0, max_results=1)[0]
+    assert {l["match_id"] for l in best["legs"]} == {0, 1} and best["all_bookmaker_odds"]
+    assert short_equivalent(2.0)["leg_odds"] == 1.41 and naive_equivalent(2.0)["total_odds"] == 2.14

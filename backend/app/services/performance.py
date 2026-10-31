@@ -59,10 +59,12 @@ def _group_stats(rows: list[Prediction]) -> dict:
 
 
 def performance(db: Session, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None,
-                competition_id: Optional[int] = None, featured: bool = False) -> dict:
+                competition_id: Optional[int] = None, featured: bool = False, value: bool = False) -> dict:
     q = select(Prediction).join(Match, Prediction.match_id == Match.id)
     if featured:
         q = q.where(Prediction.featured.is_(True))
+    if value:
+        q = q.where(Prediction.value_pick.is_(True))
     if date_from:
         q = q.where(Match.kickoff >= date_from)
     if date_to:
@@ -130,6 +132,6 @@ def prediction_row(p: Prediction) -> dict:
         "confidence": p.confidence, "confidence_level": p.confidence_level, "tier": p.tier, "odds": p.odds,
         "bookmaker": p.bookmaker, "implied_probability": p.implied_probability, "result": p.result,
         "settled_at": p.settled_at.isoformat() if p.settled_at else None, "explanation": p.explanation,
-        "engine_version": p.engine_version, "featured": bool(p.featured),
+        "engine_version": p.engine_version, "featured": bool(p.featured), "value_pick": bool(p.value_pick),
         "featured_at": p.featured_at.isoformat() if p.featured_at else None,
     }

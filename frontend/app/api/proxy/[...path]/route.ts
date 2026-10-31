@@ -6,7 +6,7 @@ import { authEnabled } from "@/lib/supabase/env";
 const MEMBERS_ONLY = [/^live$/, /^predictions$/, /^matches\/\d+$/, /^combos\//];
 
 const GET_ALLOWED = [/^matches\/\d+\/(live|insights)$/, /^search$/, /^competitions$/, /^competitions\/[A-Za-z0-9_-]+$/, /^teams\/\d+$/, /^live$/, /^recent-results$/, /^meta$/, /^predictions$/, /^matches(\/\d+)?$/, /^history$/, /^performance$/, /^calibration$/];
-const POST_ALLOWED = [/^combos\/generate$/, /^combos\/evaluate$/];
+const POST_ALLOWED = [/^combos\/generate$/, /^combos\/evaluate$/, /^combos\/target$/];
 
 async function forward(req: NextRequest, path: string[], method: "GET" | "POST") {
   const p = path.join("/");

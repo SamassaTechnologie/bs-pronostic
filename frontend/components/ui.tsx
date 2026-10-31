@@ -40,7 +40,14 @@ export function ConfidenceBadge({ score, level }: { score: number; level: string
   );
 }
 
-export function OddsInfo({ odds, edge, bookmaker }: { odds: number | null; edge: number | null; bookmaker?: string | null }) {
+export function OddsInfo({ odds, edge, bookmaker, fair }: { odds: number | null; edge: number | null; bookmaker?: string | null; fair?: number | null }) {
+  if (!odds && fair) {
+    return (
+      <span className="text-xs text-steel" title="Pas de cote bookmaker collectée pour ce marché : cote calculée à partir de notre probabilité">
+        Cote juste SAM <strong className="text-night">{num(fair)}</strong>
+      </span>
+    );
+  }
   if (!odds) return <span className="text-xs text-steel">Cote non disponible</span>;
   const edgeStyle = edge === null ? "" : edge > 0.02 ? "text-pitch-deep" : edge < -0.02 ? "text-brick" : "text-steel";
   return (

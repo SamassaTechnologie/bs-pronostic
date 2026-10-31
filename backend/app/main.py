@@ -26,6 +26,7 @@ _scheduler = None
 ADDED_COLUMNS = [
     ("predictions", "featured", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("predictions", "featured_at", "TIMESTAMP WITH TIME ZONE"),
+    ("predictions", "value_pick", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]
 
 

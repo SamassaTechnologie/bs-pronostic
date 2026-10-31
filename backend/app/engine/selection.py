@@ -24,6 +24,13 @@ DEFAULT_SETTINGS: dict = {
     "featured_min_confidence": 70,
     "featured_max_per_day": 5,
     "featured_min_fair_odds": 1.15,  # écarte les quasi-certitudes sans intérêt de la vitrine
+    # Pronostics à cote : probabilité moyenne mais solide, cote plus intéressante
+    "value_min_odds": 1.40,
+    "value_max_odds": 2.20,
+    "value_min_probability": 0.52,
+    "value_min_confidence": 60,
+    "value_max_per_day": 5,
+    "value_max_disagreement": 0.08,  # écart maximal modèle / marché quand des cotes existent
     # Matchs à éviter
     "avoid_confidence_below": 45,
     "market_divergence_alert": 0.15,

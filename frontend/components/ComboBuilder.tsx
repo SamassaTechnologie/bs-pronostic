@@ -11,7 +11,7 @@ const RISK_STYLE: Record<string, string> = {
   Extrême: "bg-brick text-white",
 };
 
-function ComboView({ c, tz, title }: { c: Combo; tz: string; title: string }) {
+export function ComboView({ c, tz, title }: { c: Combo; tz: string; title: string }) {
   if (!c.valid) {
     return (
       <div className="rounded-xl border border-brick/30 bg-brick-soft p-4 text-sm text-brick">
@@ -38,30 +38,123 @@ function ComboView({ c, tz, title }: { c: Combo; tz: string; title: string }) {
         <ProbBar p={c.probability ?? 0} thresholds={[0.25, 0.4, 0.6]} />
       </div>
       <ul className="mt-3 divide-y divide-line border-t border-line">
-        {c.legs.map((l) => (
+        {c.legs.map((l, i) => (
           <li key={`${l.match_id}-${l.market_key}`} className="flex items-center justify-between gap-3 px-4 py-2.5 text-sm">
-            <div className="min-w-0">
+            <a href={`/matchs/${l.match_id}`} className="min-w-0">
               <div className="truncate font-semibold">{l.match_label}</div>
               <div className="truncate text-xs text-steel">{l.label}, {kickoffLabel(l.kickoff, tz)}</div>
-            </div>
+            </a>
             <div className="shrink-0 text-right">
               <div className="font-semibold">{pct(l.probability)}</div>
-              <div className="text-xs text-steel">{l.odds ? `cote ${num(l.odds)}` : "sans cote"}</div>
+              <div className="text-xs text-steel">
+                {l.odds ? `cote ${num(l.odds)}` : c.legs_reference ? `cote juste ${num(c.legs_reference[i].odds)}` : "sans cote"}
+              </div>
             </div>
           </li>
         ))}
       </ul>
       <div className="flex flex-wrap gap-x-5 gap-y-1 border-t border-line px-4 py-3 text-sm">
-        <span>Cote totale <strong>{c.total_odds ? num(c.total_odds) : "indisponible"}</strong></span>
-        <span>Cote juste <strong>{num(c.fair_odds ?? null)}</strong></span>
+        {c.reference_odds && !c.total_odds ? (
+          <span>Cote juste SAM <strong>{num(c.reference_odds)}</strong></span>
+        ) : (
+          <span>Cote totale <strong>{c.total_odds ? num(c.total_odds) : "indisponible"}</strong></span>
+        )}
+        {(c.total_odds || !c.reference_odds) && <span>Cote juste <strong>{num(c.fair_odds ?? null)}</strong></span>}
         {c.expected_value != null && <span>Valeur <strong className={c.expected_value > 0 ? "text-pitch-deep" : "text-brick"}>{signedPct(c.expected_value)}</strong></span>}
       </div>
-      {c.warnings.length > 0 && (
+      {c.reference_odds && !c.all_bookmaker_odds && (
+        <p className="border-t border-line px-4 py-2.5 text-xs text-steel">
+          Certaines sélections n&apos;ont pas de cote bookmaker collectée : la cote affichée est la cote juste calculée par SAM.
+          Chez un bookmaker, elle est en général 5 à 8 % plus basse.
+        </p>
+      )}
+      {c.warnings.filter((w) => !(c.reference_odds && w.startsWith("Cote totale indisponible"))).length > 0 && (
         <ul className="space-y-1 border-t border-line px-4 py-3 text-xs text-amber">
-          {c.warnings.map((w) => <li key={w}>{w}</li>)}
+          {c.warnings.filter((w) => !(c.reference_odds && w.startsWith("Cote totale indisponible"))).map((w) => <li key={w}>{w}</li>)}
         </ul>
       )}
     </article>
+  );
+}
+
+type Equiv = { legs: number; leg_odds: number; total_odds: number; probability: number };
+
+function TargetCombos({ tz }: { tz: string }) {
+  const [target, setTarget] = useState(2);
+  const [maxLegs, setMaxLegs] = useState(3);
+  const [res, setRes] = useState<{ combos: Combo[]; message: string | null; comparison: { short: Equiv; long: Equiv } } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  async function run() {
+    setBusy(true);
+    setErr(null);
+    try {
+      const r = await fetch("/api/proxy/combos/target", { method: "POST", body: JSON.stringify({ target, max_legs: maxLegs }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.detail || "Erreur");
+      setRes(d);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Erreur");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const cmp = res?.comparison;
+  return (
+    <section>
+      <h2 className="mb-1 px-1 font-display text-lg font-bold">Objectif de cote</h2>
+      <p className="mb-3 px-1 text-sm text-steel">
+        Atteindre la cote voulue avec 2 ou 3 matchs solides plutôt qu&apos;avec 8 à 10 sélections à 1,10.
+      </p>
+      <div className="space-y-4 rounded-xl border border-line bg-white p-4">
+        <div>
+          <div className="mb-1.5 text-xs text-steel">Cote totale visée</div>
+          <div className="grid grid-cols-4 gap-1.5" role="radiogroup">
+            {[1.5, 2, 2.5, 3].map((t) => (
+              <button key={t} type="button" role="radio" aria-checked={target === t} onClick={() => setTarget(t)}
+                className={`rounded-lg py-2 text-sm font-bold ${target === t ? "bg-night text-white" : "bg-mist text-night"}`}>
+                {String(t).replace(".", ",")}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="mb-1.5 text-xs text-steel">Matchs au maximum</div>
+          <div className="grid grid-cols-3 gap-1.5" role="radiogroup">
+            {[2, 3, 4].map((n) => (
+              <button key={n} type="button" role="radio" aria-checked={maxLegs === n} onClick={() => setMaxLegs(n)}
+                className={`rounded-lg py-2 text-sm font-bold ${maxLegs === n ? "bg-night text-white" : "bg-mist text-night"}`}>
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+        <button type="button" onClick={run} disabled={busy} className="w-full rounded-lg bg-pitch py-3 text-sm font-bold text-white disabled:opacity-60">
+          {busy ? "Calcul en cours…" : `Trouver un combiné à cote ${String(target).replace(".", ",")}`}
+        </button>
+        <p className="text-xs text-steel">
+          Matchs des 48 prochaines heures, une sélection par match, confiance d&apos;au moins 60/100, matchs à éviter exclus.
+          Les propositions sont classées par chance de passer.
+        </p>
+      </div>
+      {err && <p className="mt-3 rounded-lg bg-brick-soft px-3 py-2 text-sm text-brick">{err}</p>}
+      {res?.message && <p className="mt-3 rounded-lg bg-amber-soft px-3 py-2 text-sm text-ink">{res.message}</p>}
+      {res && res.combos.length > 0 && (
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {res.combos.map((c, i) => <ComboView key={i} c={c} tz={tz} title={`Proposition ${i + 1} : ${c.n_legs} matchs`} />)}
+        </div>
+      )}
+      {cmp && (
+        <div className="mt-3 rounded-xl bg-mist px-4 py-3 text-xs text-ink">
+          <strong>Pourquoi moins de matchs ?</strong> Chaque sélection contient la marge du bookmaker (environ 5 %). Pour une cote{" "}
+          {num(target)} : {cmp.short.legs} sélections à {num(cmp.short.leg_odds)} gardent environ {pct(cmp.short.probability)} de chances
+          réelles, contre environ {pct(cmp.long.probability)} pour {cmp.long.legs} sélections à {num(cmp.long.leg_odds)} (cote{" "}
+          {num(cmp.long.total_odds)}). Et chaque match ajouté est un risque de plus de surprise.
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -134,6 +227,7 @@ export function ComboBuilder({ tz }: { tz: string }) {
 
   return (
     <div className="space-y-8">
+      <TargetCombos tz={tz} />
       <section>
         <h2 className="mb-3 px-1 font-display text-lg font-bold">Génération automatique</h2>
         <div className="space-y-4 rounded-xl border border-line bg-white p-4">

@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..engine.combos import Leg, MatchModel, evaluate_combo, generate_combos
+from ..engine.value import naive_equivalent, reference_odds, short_equivalent, target_combos
 from ..engine.markets import FAMILY_LABELS, MARKET_BY_KEY, DISPLAY_MARKETS, score_matrix
 from ..engine.predictor import ENGINE_VERSION
 from ..models import Analysis, Competition, Match, OddsQuote, Prediction, SyncRun
@@ -63,6 +64,43 @@ def pick_card(payload: dict, mk: dict) -> dict:
 def _featured_keys(db: Session, since: datetime) -> set:
     return {(p.match_id, p.market_key) for p in db.scalars(select(Prediction).join(
         Match, Prediction.match_id == Match.id).where(Prediction.featured.is_(True), Match.kickoff >= since)).unique()}
+
+
+def _value_keys(db: Session, since: datetime) -> set:
+    return {(p.match_id, p.market_key) for p in db.scalars(select(Prediction).join(
+        Match, Prediction.match_id == Match.id).where(Prediction.value_pick.is_(True), Match.kickoff >= since)).unique()}
+
+
+def _value_card(payload: dict, mk: dict) -> dict:
+    c = pick_card(payload, mk)
+    odds, real = reference_odds(mk)
+    c["reference_odds"] = round(odds, 2)
+    c["bookmaker_odds"] = real
+    c["value_pick"] = True
+    return c
+
+
+def _target_legs(analyses: list, s: dict, now: datetime, competition_ids: Optional[list[int]] = None) -> list[Leg]:
+    """Sélections candidates pour les combinés à cote cible : tous les marchés solides (pas seulement
+    les pronostics retenus), hors matchs à éviter."""
+    legs = []
+    for a in analyses:
+        p = a.payload
+        if a.match.kickoff <= now + timedelta(minutes=10) or p.get("status") != "ok" or p.get("avoid_reasons"):
+            continue
+        if competition_ids and a.match.competition_id not in competition_ids:
+            continue
+        for mk in p.get("markets", []):
+            if not mk.get("available") or mk["key"] in ("X", "HT_X", "HT_1", "HT_2"):
+                continue
+            if mk["key"] not in s["enabled_markets"]:
+                continue
+            pm = mk.get("model_probability")
+            if mk.get("implied_probability") is not None and pm is not None and \
+                    abs(float(pm) - float(mk["probability"])) > float(s["value_max_disagreement"]):
+                continue
+            legs.append(_leg(p, mk))
+    return legs
 
 
 def _upcoming_analyses(db: Session, start: datetime, end: datetime) -> list[Analysis]:
@@ -158,6 +196,18 @@ def dashboard(tz: Optional[str] = None, db: Session = Depends(get_db)):
         c["featured"] = (c["match"]["id"], c["market_key"]) in featured_keys
     selection = sorted([c for c in picks if (c["match"]["id"], c["market_key"]) in featured_keys],
                        key=lambda c: c["match"]["kickoff"])
+    value_keys = _value_keys(db, now)
+    value_picks = []
+    for a in analyses:
+        if a.match.kickoff < now:
+            continue
+        for mk in a.payload.get("markets", []):
+            if mk.get("available") and (a.match_id, mk["key"]) in value_keys:
+                value_picks.append(_value_card(a.payload, mk))
+    value_picks.sort(key=lambda c: c["match"]["kickoff"])
+    value_perf = performance(db, value=True)["overall"]
+    soon = [a for a in analyses if now < a.match.kickoff < now + timedelta(hours=36)]
+    combo_day = target_combos(_target_legs(soon, s, now), target=2.0, max_results=2)
     latest = db.scalars(select(Analysis).order_by(Analysis.computed_at.desc(), Analysis.id.desc()).limit(8)).unique().all()
     today_matches = [{"match": a.payload.get("match") or match_summary(a.match), "status": a.status,
                       "n_picks": a.n_picks, "match_confidence": a.match_confidence,
@@ -174,8 +224,14 @@ def dashboard(tz: Optional[str] = None, db: Session = Depends(get_db)):
                   "insufficient": len([a for a in analyses if a.status != "ok" and a.match.kickoff >= now]),
                   "history_total": perf["total"], "history_hit_rate": perf["hit_rate"], "history_roi": perf["roi"],
                   "history_settled": perf["n"], "selection_settled": feat_perf["n"],
-                  "selection_hit_rate": feat_perf["hit_rate"], "selection_roi": feat_perf["roi"]},
+                  "selection_hit_rate": feat_perf["hit_rate"], "selection_roi": feat_perf["roi"],
+                  "value_settled": value_perf["n"], "value_hit_rate": value_perf["hit_rate"],
+                  "value_roi": value_perf["roi"], "value_avg_probability": value_perf["avg_probability"]},
         "selection": selection,
+        "value_picks": value_picks,
+        "value_settings": {k: s[k] for k in ("value_min_odds", "value_max_odds", "value_min_probability",
+                                             "value_min_confidence", "value_max_per_day")},
+        "combo_of_day": combo_day,
         "today_matches": today_matches,
         "best_today": best_today[:10],
         "by_probability": by_prob[:20],
@@ -198,7 +254,7 @@ def predictions(date_from: Optional[date] = None, date_to: Optional[date] = None
                 market: Optional[str] = None, family: Optional[str] = None,
                 min_prob: float = Query(0.0, ge=0, le=1), min_conf: int = Query(0, ge=0, le=100),
                 tier: Optional[str] = None, min_odds: Optional[float] = None, max_odds: Optional[float] = None,
-                all_markets: bool = False, best: bool = False, featured_only: bool = False, sort: str = "score",
+                all_markets: bool = False, best: bool = False, featured_only: bool = False, value_only: bool = False, sort: str = "score",
                 limit: int = Query(60, ge=1, le=300), db: Session = Depends(get_db)):
     zone = _tz(tz)
     now = _now()
@@ -208,6 +264,7 @@ def predictions(date_from: Optional[date] = None, date_to: Optional[date] = None
     start = max(start, now - timedelta(hours=3))
     analyses = _upcoming_analyses(db, start, end)
     tiers = set(tier.upper().split(",")) if tier else None
+    vk = _value_keys(db, now - timedelta(hours=3))
     cards = []
     for a in analyses:
         p = a.payload
@@ -223,7 +280,7 @@ def predictions(date_from: Optional[date] = None, date_to: Optional[date] = None
         for mk in p.get("markets", []):
             if not mk.get("available"):
                 continue
-            is_pick = mk["key"] in (p.get("picks") or [])
+            is_pick = mk["key"] in (p.get("picks") or []) or (a.match_id, mk["key"]) in vk
             if best:
                 if mk["probability"] < s["min_probability"] or mk["confidence"]["score"] < s["min_confidence"]:
                     continue
@@ -263,8 +320,11 @@ def predictions(date_from: Optional[date] = None, date_to: Optional[date] = None
     fk = _featured_keys(db, now - timedelta(hours=3))
     for c in cards:
         c["featured"] = (c["match"]["id"], c["market_key"]) in fk
+        c["value_pick"] = (c["match"]["id"], c["market_key"]) in vk
     if featured_only:
         cards = [c for c in cards if c["featured"]]
+    if value_only:
+        cards = [c for c in cards if c["value_pick"]]
     cards.sort(key=keyfn, reverse=True)
     return {"count": len(cards), "items": cards[:limit], "range": {"from": start.isoformat(), "to": end.isoformat()}}
 
@@ -357,6 +417,29 @@ def combos_generate(req: ComboRequest, db: Session = Depends(get_db)):
     return {"combos": combos, "candidates": len({c.match_id for c in cands}), "message": msg}
 
 
+class TargetRequest(BaseModel):
+    target: float = Field(2.0, ge=1.3, le=6.0)
+    max_legs: int = Field(3, ge=2, le=4)
+    min_confidence: int = Field(60, ge=0, le=100)
+    hours: int = Field(48, ge=6, le=72)
+    competition_ids: Optional[list[int]] = None
+
+
+@router.post("/combos/target")
+def combos_target(req: TargetRequest, db: Session = Depends(get_db)):
+    """Combinés courts (2 à 4 matchs) visant une cote totale, classés par chance de passer."""
+    now = _now()
+    s = get_selection_settings(db)
+    analyses = _upcoming_analyses(db, now + timedelta(minutes=10), now + timedelta(hours=req.hours))
+    legs = _target_legs(analyses, s, now, req.competition_ids)
+    combos = target_combos(legs, req.target, 2, req.max_legs, max_results=3, min_confidence=req.min_confidence)
+    msg = None if combos else (f"Aucune combinaison de {req.max_legs} matchs au plus n'atteint une cote d'environ "
+                               f"{str(req.target).replace('.', ',')} avec des sélections assez solides. "
+                               "Essayez une cote cible plus basse ou une période plus longue.")
+    return {"combos": combos, "candidates": len({l.match_id for l in legs}), "message": msg,
+            "comparison": {"short": short_equivalent(req.target, 2), "long": naive_equivalent(req.target, 1.10)}}
+
+
 @router.post("/combos/evaluate")
 def combos_evaluate(req: EvaluateRequest, db: Session = Depends(get_db)):
     legs, models = [], {}
@@ -381,10 +464,12 @@ def combos_evaluate(req: EvaluateRequest, db: Session = Depends(get_db)):
 @router.get("/history")
 def history(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), result: Optional[str] = None,
             market: Optional[str] = None, competition: Optional[int] = None, featured: bool = False,
-            db: Session = Depends(get_db)):
+            value: bool = False, db: Session = Depends(get_db)):
     q = select(Prediction).join(Match, Prediction.match_id == Match.id)
     if featured:
         q = q.where(Prediction.featured.is_(True))
+    if value:
+        q = q.where(Prediction.value_pick.is_(True))
     if result:
         q = q.where(Prediction.result == result)
     if market:
@@ -398,10 +483,11 @@ def history(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), 
 
 @router.get("/performance")
 def performance_endpoint(date_from: Optional[date] = None, date_to: Optional[date] = None,
-                         competition: Optional[int] = None, featured: bool = False, db: Session = Depends(get_db)):
+                         competition: Optional[int] = None, featured: bool = False, value: bool = False,
+                         db: Session = Depends(get_db)):
     df = datetime.combine(date_from, time(0), tzinfo=UTC) if date_from else None
     dt = datetime.combine(date_to, time(0), tzinfo=UTC) + timedelta(days=1) if date_to else None
-    return performance(db, df, dt, competition, featured)
+    return performance(db, df, dt, competition, featured, value)
 
 
 @router.get("/calibration")
@@ -416,6 +502,7 @@ def public_summary(db: Session = Depends(get_db)):
     """Chiffres publics pour la page de présentation (aucune donnée personnelle)."""
     perf = performance(db)["overall"]
     feat = performance(db, featured=True)["overall"]
+    val = performance(db, value=True)["overall"]
     cal = load_calibration(db)
     oos = cal.get("out_of_sample") or {}
     comps = db.scalar(select(func.count(Competition.id)).where(Competition.enabled.is_(True)))
@@ -424,6 +511,7 @@ def public_summary(db: Session = Depends(get_db)):
     return {"competitions": comps, "upcoming_analysed": upcoming,
             "all": {k: perf[k] for k in ("total", "n", "won", "hit_rate", "avg_probability", "roi")},
             "selection": {k: feat[k] for k in ("total", "n", "won", "hit_rate", "avg_probability", "roi")},
+            "value": {k: val[k] for k in ("total", "n", "won", "hit_rate", "avg_probability", "roi")},
             "backtest": {"tiers": oos.get("tiers"), "n_matches": cal.get("n_matches"),
                          "divisions": len(cal.get("divisions") or [])}}
 
