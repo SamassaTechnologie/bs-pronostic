@@ -59,8 +59,15 @@ def init_db() -> None:
 
 def _scheduled_pipeline() -> None:
     from .services.pipeline import run_pipeline
+    from .services.sync import last_successful_sync
 
     with SessionLocal() as db:
+        last = last_successful_sync(db)
+        # Après un redémarrage (déploiement), inutile de tout resynchroniser si c'est récent :
+        # cela consommerait le quota quotidien des API pour rien.
+        if last is not None and datetime.now(timezone.utc) - last < timedelta(minutes=get_settings().sync_interval_minutes - 15):
+            log.info("Synchronisation récente (%s) : passage ignoré", last.isoformat())
+            return
         res = run_pipeline(db)
         log.info("Synchronisation planifiée : %s", res.get("status"))
 
