@@ -320,7 +320,8 @@ def _af_fixtures(db: Session, af: ApiFootball, comps: list[Competition], now: da
         indexes: dict[int, MatchIndex] = {}
         created, linked = 0, 0
         skipped: list[str] = []
-        for d in range(-1, days_ahead + 1):
+        last = min(days_ahead, get_settings().api_football_max_days_ahead)
+        for d in range(-1, last + 1):
             day = (now + timedelta(days=d)).date().isoformat()
             try:
                 fixtures = af.fixtures_by_date(day)
@@ -346,7 +347,7 @@ def _af_fixtures(db: Session, af: ApiFootball, comps: list[Competition], now: da
         msg = f"{created} matchs mis à jour, {linked} rattachés ({af.requests_made} requêtes)"
         if skipped:
             msg += f" ; dates non couvertes par le plan : {len(skipped)} — " + skipped[0]
-            if created + linked == 0 and len(skipped) == days_ahead + 2:
+            if created + linked == 0 and len(skipped) == last + 2:
                 raise ProviderError(msg)
         return created + linked, msg
 
@@ -499,7 +500,7 @@ def run_sync(db: Session, kinds: Iterable[str] = ("history", "upcoming", "enrich
         if "enrich" in kinds:
             remaining = cfg.api_football_daily_budget - used - af.requests_made
             if remaining >= 2:
-                results.append(_af_enrich(db, af, now, max_fixtures=min(10, remaining // 2)))
+                results.append(_af_enrich(db, af, now, max_fixtures=min(6, remaining // 2)))
         _add_api_usage(db, af.name, af.requests_made)
 
     fo = FootballDataOrg()
