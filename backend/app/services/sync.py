@@ -35,6 +35,46 @@ MATCH_FIELDS = ("home_goals", "away_goals", "ht_home_goals", "ht_away_goals", "h
 # Résolution des équipes et des matchs
 # ---------------------------------------------------------------------------
 
+INTERNATIONAL = {"Europe", "Afrique", "Monde", "Amérique du Sud", "Asie"}
+
+
+def find_club(db: Session, name: str) -> Optional[Team]:
+    """Club national correspondant à un nom de coupe internationale (nom exact normalisé, sinon très proche)."""
+    norm = normalize_team(name)
+    clubs = db.scalars(select(Team).where(Team.country.not_in(INTERNATIONAL))).all()
+    exact = [t for t in clubs if t.norm_name == norm]
+    if len(exact) == 1:
+        return exact[0]
+    scored = sorted(((similarity(name, t.name), t) for t in clubs), key=lambda x: x[0], reverse=True)
+    if scored and scored[0][0] >= 90 and (len(scored) == 1 or scored[0][0] - scored[1][0] >= 5):
+        return scored[0][1]
+    return None
+
+
+def merge_international_duplicates(db: Session) -> dict:
+    """Fusionne les équipes créées pour une coupe internationale avec leur club de championnat."""
+    from sqlalchemy import update as sa_update
+    merged, kept = [], []
+    for dup in db.scalars(select(Team).where(Team.country.in_(INTERNATIONAL))).all():
+        club = find_club(db, dup.name)
+        if club is None:
+            kept.append(dup.name)
+            continue
+        db.execute(sa_update(Match).where(Match.home_team_id == dup.id).values(home_team_id=club.id))
+        db.execute(sa_update(Match).where(Match.away_team_id == dup.id).values(away_team_id=club.id))
+        db.execute(sa_update(TeamAlias).where(TeamAlias.team_id == dup.id).values(team_id=club.id))
+        db.execute(sa_update(Injury).where(Injury.team_id == dup.id).values(team_id=club.id))
+        if club.fdorg_id is None and dup.fdorg_id is not None:
+            club.fdorg_id, dup.fdorg_id = dup.fdorg_id, None
+        if club.api_football_id is None and dup.api_football_id is not None:
+            club.api_football_id, dup.api_football_id = dup.api_football_id, None
+        db.flush()
+        db.delete(dup)
+        merged.append(f"{dup.name} → {club.name}")
+    db.commit()
+    return {"merged": merged, "kept": kept}
+
+
 class TeamResolver:
     def __init__(self, db: Session):
         self.db = db
@@ -58,6 +98,9 @@ class TeamResolver:
                 team = db.get(Team, alias.team_id)
         if team is None:
             team = db.scalar(select(Team).where(Team.country == country, Team.norm_name == norm))
+        if team is None and country in INTERNATIONAL:
+            # Coupe internationale : on rattache l'équipe à son club de championnat (historique commun).
+            team = find_club(db, name)
         if team is None:
             team = Team(name=name.strip(), norm_name=norm, country=country)
             db.add(team)

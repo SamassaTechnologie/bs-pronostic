@@ -205,3 +205,9 @@ def cron_run():
         return {"status": "busy"}
     _in_background(run_pipeline)
     return {"status": "started"}
+
+
+@router.post("/teams/merge-international")
+def merge_international(db: Session = Depends(get_db)):
+    from ..services.sync import merge_international_duplicates
+    return merge_international_duplicates(db)

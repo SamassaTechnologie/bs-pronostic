@@ -264,3 +264,26 @@ def test_catalog_endpoints(client):
     assert any(c["code"] == "ENG1" for c in client.get("/api/search", params={"q": "premier"}).json()["competitions"])
     live = client.get("/api/live", params={"tz": "Africa/Bamako"}).json()
     assert {"live", "upcoming", "finished"} <= set(live)
+
+
+def test_international_teams_merge_with_clubs(populated):
+    from app.models import Team
+    from app.services.sync import TeamResolver, find_club, merge_international_duplicates
+    with SessionLocal() as db:
+        ucl = db.scalar(select(Competition).where(Competition.code == "UCL"))
+        city = db.scalar(select(Team).where(Team.name == "Man City"))
+        assert find_club(db, "Manchester City FC").id == city.id
+        assert find_club(db, "Ferencvárosi TC") is None
+        dup = Team(name="Arsenal FC", norm_name="arsenal fc-dup", country="Europe")
+        other = Team(name="Ferencvárosi TC", norm_name="ferencvarosi", country="Europe")
+        db.add_all([dup, other]); db.flush()
+        m = Match(competition_id=ucl.id, home_team_id=dup.id, away_team_id=other.id,
+                  kickoff=datetime(2026, 2, 20, 20, tzinfo=UTC), status="FINISHED", source="test", home_goals=2, away_goals=0)
+        db.add(m); db.commit()
+        res = merge_international_duplicates(db)
+        assert "Arsenal FC → Arsenal" in res["merged"] and "Ferencvárosi TC" in res["kept"]
+        db.refresh(m)
+        assert m.home_team.name == "Arsenal" and m.away_team.name == "Ferencvárosi TC"
+        # Les prochaines synchronisations rattachent directement au club
+        assert TeamResolver(db).resolve("Chelsea FC", "Europe", "football_data_org").name == "Chelsea"
+        db.rollback()
