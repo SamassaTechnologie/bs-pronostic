@@ -207,6 +207,15 @@ def cron_run():
     return {"status": "started"}
 
 
+@cron_router.post("/analyze")
+def cron_analyze():
+    """Recalcule les analyses sans appeler les fournisseurs (aucun quota consommé)."""
+    if pipeline_state()["running"]:
+        return {"status": "busy"}
+    _in_background(run_analysis_only)
+    return {"status": "started"}
+
+
 @router.post("/teams/merge-international")
 def merge_international(db: Session = Depends(get_db)):
     from ..services.sync import merge_international_duplicates
