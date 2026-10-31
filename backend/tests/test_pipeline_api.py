@@ -287,3 +287,23 @@ def test_international_teams_merge_with_clubs(populated):
         # Les prochaines synchronisations rattachent directement au club
         assert TeamResolver(db).resolve("Chelsea FC", "Europe", "football_data_org").name == "Chelsea"
         db.rollback()
+
+
+def test_match_insights_and_trends(client):
+    from app.engine.trends import team_trends
+    from app.engine.types import MatchData
+    ms = [MatchData(i, "C", datetime(2026, 1, 20 - i, tzinfo=UTC), "A", f"B{i}", hg=3, ag=1) for i in range(8)]
+    tr = team_trends("Alpha", "A", ms, "home", "à domicile", ms)
+    texts = [t["text"] for t in tr]
+    assert "Alpha a gagné ses 8 derniers matchs" in texts
+    assert any(t.startswith("Plus de 2,5 buts dans 8 des 8") for t in texts)
+
+    preds = client.get("/api/predictions", params={"all_markets": True}).json()["items"]
+    mid = preds[0]["match"]["id"]
+    d = client.get(f"/api/matches/{mid}/insights").json()
+    assert d["live"]["state"] in ("scheduled", "live", "finished")
+    assert len(d["form"]["home"]) == 10 and d["form"]["home"][0]["result"] in "VND"
+    assert d["standings"] and d["odds"] and d["odds"][0]["average"] > 1
+    assert all(t["text"] and 0 <= t["strength"] <= 2 for t in d["trends"])
+    assert client.get(f"/api/matches/{mid}/live").json()["state"]
+    assert client.get("/api/matches/999999/insights").status_code == 404

@@ -191,3 +191,128 @@ def search(q: str = Query(..., min_length=2, max_length=60), db: Session = Depen
         team_rows.append({"id": t.id, "name": t.name, "country": t.country,
                           "next": match_summary(nxt) if nxt else None})
     return {"query": q, "teams": team_rows, "competitions": comp_hits, "countries": country_hits}
+
+
+# ---------------------------------------------------------------------------
+# Fiche match avancée : tendances, forme détaillée, confrontations, classement, cotes, direct
+# ---------------------------------------------------------------------------
+
+def _team_matches(db: Session, team_id: int, before: datetime, limit: int = 40) -> list[Match]:
+    return db.scalars(select(Match).where(or_(Match.home_team_id == team_id, Match.away_team_id == team_id),
+                                          Match.status == "FINISHED", Match.kickoff < before)
+                      .order_by(Match.kickoff.desc()).limit(limit)).unique().all()
+
+
+def _form_rows(ms: list[Match], team_id: int) -> list[dict]:
+    rows = []
+    for m in ms:
+        home = m.home_team_id == team_id
+        gf, ga = (m.home_goals, m.away_goals) if home else (m.away_goals, m.home_goals)
+        rows.append({
+            "match_id": m.id, "date": m.kickoff.isoformat(), "competition": m.competition.name,
+            "venue": "home" if home else "away", "opponent": {"id": (m.away_team if home else m.home_team).id,
+                                                              "name": (m.away_team if home else m.home_team).name},
+            "score": f"{m.home_goals}-{m.away_goals}", "goals_for": gf, "goals_against": ga,
+            "result": "V" if gf > ga else ("N" if gf == ga else "D"),
+            "ht": f"{m.ht_home_goals}-{m.ht_away_goals}" if m.ht_home_goals is not None else None,
+            "corners": m.home_corners + m.away_corners if m.home_corners is not None and m.away_corners is not None else None,
+            "cards": (sum(x for x in (m.home_yellow, m.away_yellow, m.home_red, m.away_red))
+                      if None not in (m.home_yellow, m.away_yellow, m.home_red, m.away_red) else None),
+        })
+    return rows
+
+
+MARKET_ORDER = ["1", "X", "2", "1X", "X2", "12", "O0.5", "O1.5", "U1.5", "O2.5", "U2.5", "O3.5", "U3.5", "O4.5", "U4.5",
+                "BTTS_Y", "BTTS_N", "HT_1", "HT_X", "HT_2", "HT_O0.5", "HT_U0.5", "HT_O1.5", "HT_U1.5"]
+
+
+@router.get("/matches/{match_id}/insights")
+def match_insights(match_id: int, db: Session = Depends(get_db)):
+    from ..engine.markets import MARKET_BY_KEY, market_label
+    from ..engine.trends import h2h_trends, team_trends
+    from ..models import OddsQuote
+    from ..services.live import match_live_state
+
+    m = db.get(Match, match_id)
+    if m is None:
+        raise HTTPException(404, "Match introuvable")
+    ref = min(m.kickoff, _now() + timedelta(days=1))
+    home_ms = _team_matches(db, m.home_team_id, ref)
+    away_ms = _team_matches(db, m.away_team_id, ref)
+    hd = [match_to_data(x) for x in home_ms]
+    ad = [match_to_data(x) for x in away_ms]
+    h2h = db.scalars(select(Match).where(
+        or_((Match.home_team_id == m.home_team_id) & (Match.away_team_id == m.away_team_id),
+            (Match.home_team_id == m.away_team_id) & (Match.away_team_id == m.home_team_id)),
+        Match.status == "FINISHED", Match.kickoff < ref).order_by(Match.kickoff.desc()).limit(10)).unique().all()
+    h2d = [match_to_data(x) for x in h2h]
+    a = db.scalar(select(Analysis).where(Analysis.match_id == m.id))
+    probs = {mk["key"]: mk["probability"] for mk in (a.payload.get("markets", []) if a else []) if mk.get("available")}
+
+    trends = (team_trends(m.home_team.name, m.home_team_id, hd, "home", "à domicile",
+                          [x for x in hd if x.home_id == m.home_team_id])
+              + team_trends(m.away_team.name, m.away_team_id, ad, "away", "à l'extérieur",
+                            [x for x in ad if x.away_id == m.away_team_id])
+              + h2h_trends(m.home_team.name, m.away_team.name, m.home_team_id, h2d[:6]))
+    for t in trends:
+        t["probability"] = probs.get(t["market"]) if t.get("market") else None
+        t["market_label"] = market_label(t["market"]) if t.get("market") else None
+    trends.sort(key=lambda t: t["strength"], reverse=True)
+
+    # Classement complet de la saison du match
+    table = []
+    if m.season:
+        rows = standings([match_to_data(x) for x in db.scalars(select(Match).where(
+            Match.competition_id == m.competition_id, Match.status == "FINISHED", Match.season == m.season,
+            Match.kickoff < ref)).unique()])
+        names = {t.id: t.name for t in db.scalars(select(Team).where(Team.id.in_([r["team_id"] for r in rows])))}
+        table = [{**r, "team": names.get(r["team_id"], "?")} for r in rows]
+
+    # Cotes : toutes les offres par marché (moyenne, meilleure), comparées à nos probabilités
+    quotes = db.scalars(select(OddsQuote).where(OddsQuote.match_id == m.id)).all()
+    by_market: dict[str, list] = defaultdict(list)
+    for q in quotes:
+        if q.bookmaker != "Max":
+            by_market[q.market_key].append(q)
+    odds = []
+    for key, qs in by_market.items():
+        prices = [q.price for q in qs]
+        best = max(qs, key=lambda q: q.price)
+        p = probs.get(key)
+        spec = MARKET_BY_KEY.get(key)
+        odds.append({"market_key": key, "label": market_label(key), "short": spec.short if spec else key,
+                     "family": MARKET_BY_KEY[key].family if key in MARKET_BY_KEY else "autre",
+                     "bookmakers": len(qs), "average": round(sum(prices) / len(prices), 2), "best": best.price,
+                     "best_bookmaker": best.bookmaker, "probability": p,
+                     "fair_odds": round(1 / p, 2) if p else None,
+                     "value": round(p * best.price - 1, 3) if p else None})
+    odds.sort(key=lambda o: (MARKET_ORDER.index(o["market_key"]) if o["market_key"] in MARKET_ORDER else 99, o["market_key"]))
+
+    hw = sum(x.goals_for(m.home_team_id) > x.goals_against(m.home_team_id) for x in h2d)
+    dr = sum(x.hg == x.ag for x in h2d)
+    return {
+        "live": match_live_state(db, m),
+        "trends": trends,
+        "form": {"home": _form_rows(home_ms[:10], m.home_team_id), "away": _form_rows(away_ms[:10], m.away_team_id)},
+        "h2h": {
+            "n": len(h2d), "home_wins": hw, "draws": dr, "away_wins": len(h2d) - hw - dr,
+            "avg_goals": round(sum(x.hg + x.ag for x in h2d) / len(h2d), 2) if h2d else None,
+            "over25": round(sum(x.hg + x.ag > 2.5 for x in h2d) / len(h2d), 3) if h2d else None,
+            "btts": round(sum(x.hg > 0 and x.ag > 0 for x in h2d) / len(h2d), 3) if h2d else None,
+            "matches": [{"match_id": x.id, "date": x.kickoff.isoformat(), "competition": x.competition.name,
+                         "home": x.home_team.name, "away": x.away_team.name, "score": f"{x.home_goals}-{x.away_goals}",
+                         "ht": f"{x.ht_home_goals}-{x.ht_away_goals}" if x.ht_home_goals is not None else None}
+                        for x in h2h],
+        },
+        "standings": table,
+        "odds": odds,
+    }
+
+
+@router.get("/matches/{match_id}/live")
+def match_live(match_id: int, db: Session = Depends(get_db)):
+    from ..services.live import match_live_state
+    m = db.get(Match, match_id)
+    if m is None:
+        raise HTTPException(404, "Match introuvable")
+    return match_live_state(db, m)

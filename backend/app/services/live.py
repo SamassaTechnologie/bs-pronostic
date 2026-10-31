@@ -138,6 +138,53 @@ def _picks(preds: list, m: Match, lv: Optional[dict], finished: bool) -> list[di
     return out
 
 
+def _live_items(db: Session) -> tuple[dict, Optional[str], Optional[str]]:
+    """Scores en direct (cache de 60 s partagé avec la page Direct)."""
+    with _lock:
+        if time.monotonic() - _cache["at"] >= CACHE_SECONDS:
+            res = refresh_scores(db)
+            _cache.update(at=time.monotonic(), items=res.get("live", []), error=res.get("error"),
+                          source_ok=res.get("ok"), refreshed_at=utcnow().isoformat())
+        return {x["match_id"]: x for x in _cache["items"]}, _cache.get("error"), _cache.get("refreshed_at")
+
+
+def estimated_minute(kickoff: datetime, now: datetime, paused: bool = False) -> Optional[str]:
+    """Minute approximative à partir de l'heure du coup d'envoi (la source gratuite ne la fournit pas toujours)."""
+    elapsed = (now - kickoff).total_seconds() / 60
+    if elapsed < 0:
+        return None
+    if paused or 47 <= elapsed < 62:
+        return "Mi-temps"
+    if elapsed < 47:
+        return f"{max(1, int(elapsed))}'" if elapsed < 45 else "45+'"
+    minute = int(elapsed - 15)
+    return f"{minute}'" if minute <= 90 else "90+'"
+
+
+def match_live_state(db: Session, m: Match) -> dict:
+    """État d'un match pour la fiche : à venir, en cours (score, minute), terminé."""
+    now = utcnow()
+    if m.status == "FINISHED":
+        return {"state": "finished", "label": "Terminé", "home": m.home_goals, "away": m.away_goals,
+                "ht_home": m.ht_home_goals, "ht_away": m.ht_away_goals, "minute": None, "covered": True}
+    started = m.kickoff <= now <= m.kickoff + timedelta(minutes=150)
+    live, error, refreshed = _live_items(db) if started else ({}, None, None)
+    lv = live.get(m.id)
+    if lv:
+        paused = lv.get("status") == "Mi-temps"
+        minute = f"{lv['minute']}'" if lv.get("minute") else estimated_minute(m.kickoff, now, paused)
+        return {"state": "live", "label": "Mi-temps" if paused else "En cours", "home": lv.get("home"),
+                "away": lv.get("away"), "ht_home": lv.get("ht_home"), "ht_away": lv.get("ht_away"),
+                "minute": minute, "minute_estimated": not lv.get("minute"), "covered": True, "refreshed_at": refreshed}
+    if started:
+        return {"state": "live", "label": "En cours", "home": None, "away": None, "minute": estimated_minute(m.kickoff, now),
+                "minute_estimated": True, "covered": False, "refreshed_at": refreshed,
+                "note": "Score en direct non disponible pour ce championnat (source gratuite)" if not error else error}
+    if m.status in ("POSTPONED", "CANCELLED"):
+        return {"state": "postponed", "label": "Reporté" if m.status == "POSTPONED" else "Annulé", "covered": False}
+    return {"state": "scheduled", "label": "À venir", "covered": False}
+
+
 def live_board(db: Session, force: bool = False, tz_name: Optional[str] = None) -> dict:
     """Journée en un coup d'œil : matchs en cours, à venir aujourd'hui, terminés aujourd'hui.
     Les appels externes sont limités à 1 par minute (cache)."""
