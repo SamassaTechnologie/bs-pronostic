@@ -145,6 +145,17 @@ Générer des secrets : `python -c "import secrets; print(secrets.token_urlsafe(
 - Variables Vercel supplémentaires : `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 - Supabase → Authentication → URL Configuration : *Site URL* = l'adresse du site, *Redirect URLs* = `https://VOTRE-SITE/auth/callback`.
 
+### Navigation (version actuelle)
+
+- **Accueil** : Sélection SAM du jour, résultats récents, top 5, matchs du jour.
+- **Pronostics** : regroupés par championnat (drapeau, pays) puis par match ; onglets Aujourd'hui / Demain / Après-demain ;
+  vue « détail par pronostic » avec explications ; filtres avancés ; générateur de combinés.
+- **Direct** : onglets En cours / À venir / Terminés, groupés par championnat, état de chaque pronostic minute par minute.
+- **Ligues** : championnats par pays ; page ligue (statistiques, prochains matchs, classement avec forme, résultats,
+  bilan SAM) ; page équipe (classement, forme, stats domicile/extérieur, prochains matchs, résultats).
+- **Recherche** (loupe en haut) : équipes, championnats et pays, insensible aux accents.
+- Les clubs des coupes européennes sont rattachés à leur club de championnat (historique commun).
+
 ## 5. Sécurité
 
 - Clés API uniquement dans les variables d'environnement du backend ; jamais transmises au navigateur.
