@@ -76,19 +76,27 @@ def target_combos(candidates: list[Leg], target: float = 2.0, min_legs: int = 2,
     """Combinés de `min_legs` à `max_legs` matchs différents dont la cote de référence totale est proche
     de `target` (entre target × low et target × high), classés par chance de passer."""
     lo_total, hi_total = target * low, target * high
-    max_leg_odds = hi_total / 1.15  # au-delà, l'autre sélection serait une quasi-certitude sans intérêt
-    pool = [c for c in candidates if c.confidence >= min_confidence and c.probability >= min_probability
-            and 1.12 <= _ref(c)[0] <= max_leg_odds]
-    # Au plus 3 marchés par match, les plus solides.
-    by_match: dict[Hashable, list[Leg]] = {}
-    for c in sorted(pool, key=lambda c: c.probability * (0.5 + c.confidence / 200), reverse=True):
-        if len(by_match.setdefault(c.match_id, [])) < 3:
-            by_match[c.match_id].append(c)
-    pool = sorted((c for v in by_match.values() for c in v),
-                  key=lambda c: c.probability * (0.5 + c.confidence / 200), reverse=True)[:36]
+    base = [c for c in candidates if c.confidence >= min_confidence and c.probability >= min_probability]
+
+    def pay(c: Leg) -> float:
+        o, real = _ref(c)
+        return o if real else o * (1 - TYPICAL_MARGIN)
+
+    def strength(c: Leg) -> float:
+        return c.probability * (0.5 + c.confidence / 200)
 
     scored: list[tuple[float, tuple[Leg, ...]]] = []
     for n in range(min_legs, max_legs + 1):
+        # Pour n sélections, chaque cote doit tourner autour de target^(1/n) : on ne garde que cette plage,
+        # sinon les quasi-certitudes (cote 1,05) occupent tout le réservoir.
+        centre = target ** (1 / n)
+        lo_leg, hi_leg = centre / 1.12, centre * 1.18
+        band = [c for c in base if lo_leg <= pay(c) <= hi_leg and pay(c) >= 1.1]
+        by_match: dict[Hashable, list[Leg]] = {}
+        for c in sorted(band, key=strength, reverse=True):
+            if len(by_match.setdefault(c.match_id, [])) < 2:
+                by_match[c.match_id].append(c)
+        pool = sorted((c for v in by_match.values() for c in v), key=strength, reverse=True)[:40 if n == 2 else 28]
         for combo in itertools.combinations(pool, n):
             if len({c.match_id for c in combo}) < n:
                 continue
