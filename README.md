@@ -142,6 +142,15 @@ Générer des secrets : `python -c "import secrets; print(secrets.token_urlsafe(
   cotes sans marge (80 %), poids choisi par backtest (Brier 1X2 : 0,2019 → 0,1981).
 - **Sélection SAM du jour** : 5 pronostics maximum par jour, probabilité ≥ 75 %, confiance ≥ 70/100, cote juste ≥ 1,15,
   un par match ; bilan publié séparément.
+- **Pronostics à cote** : 5 maximum par jour, un par match, cote jouable d'environ 1,40 à 2,20 (cote bookmaker, ou cote
+  juste SAM moins une marge typique de 5 % si aucune cote n'est collectée), probabilité ≥ 52 %, confiance ≥ 60/100,
+  modèle seul d'accord avec le marché (écart ≤ 8 points), matchs à éviter exclus ; figés avant le match, bilan séparé
+  (`/historique?cote=1`). Réglages `value_*` modifiables par l'API d'administration.
+- **Combinés à cote cible** (`POST /api/combos/target`, accueil « Combiné cote 2 du jour », page Combinés « Objectif de
+  cote ») : 2 à 4 matchs différents dont la cote totale jouable est proche de la cible (1,5 / 2 / 2,5 / 3), classés par
+  chance de passer. À cote égale, moins de sélections = moins de marge cumulée (cote 2 : environ 45 % de chances réelles
+  avec 2 sélections à 1,41, environ 31 % avec 8 sélections à 1,10).
+- **Cron sans quota** : `POST /api/cron/analyze` (en-tête `X-Cron-Secret`) recalcule les analyses sans appeler les fournisseurs.
 - Variables Vercel supplémentaires : `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 - Supabase → Authentication → URL Configuration : *Site URL* = l'adresse du site, *Redirect URLs* = `https://VOTRE-SITE/auth/callback`.
 
