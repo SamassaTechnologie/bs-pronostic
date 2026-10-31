@@ -48,6 +48,11 @@ ALIASES = {
     "casa pia ac": "casa pia", "manchester united": "manchester united", "brighton hove albion": "brighton",
     "wolverhampton wanderers": "wolverhampton wanderers", "nottingham forest": "nottingham forest",
     "afc bournemouth": "bournemouth", "sheffield united": "sheffield united", "wrexham": "wrexham",
+    "internazionale milano": "inter", "fc internazionale milano": "inter", "royale union saint gilloise": "st gilloise",
+    "union saint gilloise": "st gilloise", "union sg": "st gilloise", "pae olympiakos sfp": "olympiakos",
+    "olympiacos": "olympiakos", "olympiakos piraeus": "olympiakos", "pae aek": "aek", "aek athens": "aek",
+    "fc kobenhavn": "kobenhavn", "fc copenhagen": "kobenhavn", "copenhagen": "kobenhavn",
+    "fk bodo glimt": "bodo glimt", "bodo glimt": "bodo glimt",
 }
 
 
