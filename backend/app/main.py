@@ -47,6 +47,12 @@ def init_db() -> None:
 
     Base.metadata.create_all(engine)
     migrate_columns()
+    # Les synchronisations interrompues par un redémarrage restent sinon « en cours » indéfiniment.
+    from sqlalchemy import update
+    from .models import SyncRun, utcnow
+    with engine.begin() as conn:
+        conn.execute(update(SyncRun).where(SyncRun.status == "running").values(
+            status="error", message="Interrompue par un redémarrage du serveur", finished_at=utcnow()))
     with SessionLocal() as db:
         seed_reference_data(db)
 

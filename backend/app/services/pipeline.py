@@ -59,6 +59,25 @@ def run_pipeline(db: Session, kinds=("history", "upcoming", "enrich"), force: bo
         _lock.release()
 
 
+def run_analysis_only(db: Session) -> dict:
+    """Relance l'analyse seule (sans synchronisation), avec le même verrou que la chaîne complète."""
+    if not _lock.acquire(blocking=False):
+        return {"status": "busy", "message": "Une synchronisation ou une analyse est déjà en cours"}
+    try:
+        _state.update(running=True, started_at=utcnow().isoformat(), step="analyse")
+        res = run_analysis(db)
+        settled = settle_predictions(db)
+        _state["last_result"] = {"status": "ok", "analysis": res, "settled": settled, "finished_at": utcnow().isoformat()}
+        return _state["last_result"]
+    except Exception as exc:
+        log.exception("Échec de l'analyse")
+        _state["last_result"] = {"status": "error", "message": str(exc), "finished_at": utcnow().isoformat()}
+        return _state["last_result"]
+    finally:
+        _state.update(running=False, step=None)
+        _lock.release()
+
+
 def recalibrate(db: Session, months: int = 12, min_n: int = 300) -> dict:
     """Backtest chronologique sur les données en base, puis nouvelle calibration (si assez de données)."""
     now = utcnow()

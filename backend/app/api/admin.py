@@ -15,7 +15,7 @@ from ..models import Analysis, Calibration, Competition, Match, Prediction, Sync
 from ..providers.registry import PROVIDERS, make_provider, provider_status
 from ..services.analysis import run_analysis
 from ..services.performance import settle_predictions
-from ..services.pipeline import pipeline_state, recalibrate, run_pipeline
+from ..services.pipeline import pipeline_state, recalibrate, run_analysis_only, run_pipeline
 from ..services.settings_service import (get_selection_settings, set_provider_flag, update_selection_settings)
 from .deps import get_db, require_admin, require_cron
 
@@ -173,8 +173,11 @@ def get_pipeline():
 
 
 @router.post("/analyze")
-def trigger_analysis(db: Session = Depends(get_db)):
-    return run_analysis(db)
+def trigger_analysis():
+    if pipeline_state()["running"]:
+        return {"status": "busy", "message": "Une synchronisation est en cours : l'analyse sera faite à la fin automatiquement"}
+    _in_background(run_analysis_only)
+    return {"status": "started", "message": "Analyse lancée : les pronostics seront à jour d'ici une à deux minutes"}
 
 
 @router.post("/settle")

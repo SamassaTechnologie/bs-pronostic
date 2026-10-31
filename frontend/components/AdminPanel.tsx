@@ -23,7 +23,12 @@ const NUMERIC_SETTINGS: [string, string, number][] = [
 ];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(`/api/admin/${path}`, { ...init, headers: { "Content-Type": "application/json" } });
+  let r: Response;
+  try {
+    r = await fetch(`/api/admin/${path}`, { ...init, headers: { "Content-Type": "application/json" } });
+  } catch {
+    throw new Error("Connexion au serveur interrompue. Vérifiez votre réseau puis réessayez : l'opération continue peut-être en arrière-plan.");
+  }
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : `Erreur ${r.status}`);
   return d as T;
@@ -52,11 +57,19 @@ export function AdminPanel() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  const running = Boolean(status?.pipeline.running);
   useEffect(() => {
-    if (!status?.pipeline.running) return;
-    const t = setInterval(load, 4000);
+    if (!running) return;
+    const t = setInterval(async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const [s, r] = await Promise.all([api<Status>("status"), api<Run[]>("sync-runs?limit=25")]);
+        setStatus(s);
+        setRuns(r);
+      } catch {}
+    }, 10000);
     return () => clearInterval(t);
-  }, [status?.pipeline.running, load]);
+  }, [running]);
 
   async function act(path: string, body: unknown, success: string) {
     setNotice(null);
@@ -126,17 +139,17 @@ export function AdminPanel() {
         <div className={`${box} space-y-3 p-4 text-sm`}>
           <p>
             {status.pipeline.running ? (
-              <strong>En cours : {status.pipeline.step}…</strong>
+              <strong>En cours : {status.pipeline.step}… (quelques minutes ; les boutons se réactivent à la fin)</strong>
             ) : (
-              <>Dernier passage : {status.pipeline.last_result ? `${status.pipeline.last_result.status === "ok" ? "réussi" : "en erreur"}, ${fmt(status.pipeline.last_result.finished_at)}` : "aucun depuis le démarrage du serveur"}.</>
+              <>Dernier passage : {status.pipeline.last_result ? `${status.pipeline.last_result.status === "ok" ? "réussi" : `en erreur (${status.pipeline.last_result.message ?? "voir le journal"})`}, ${fmt(status.pipeline.last_result.finished_at)}` : "aucun depuis le démarrage du serveur"}.</>
             )}{" "}
             Automatique {status.scheduler.enabled ? `toutes les ${status.scheduler.interval_minutes} min` : "désactivée (déclenchement externe)"}.
           </p>
           <div className="grid grid-cols-2 gap-2">
             <button onClick={() => act("sync", {}, "Synchronisation lancée")} disabled={status.pipeline.running} className="rounded-lg bg-night px-3 py-2.5 font-bold text-white disabled:opacity-50">Synchroniser et analyser</button>
-            <button onClick={() => act("analyze", {}, "Analyse terminée")} className="rounded-lg bg-mist px-3 py-2.5 font-bold">Relancer l&apos;analyse</button>
-            <button onClick={() => act("settle", {}, "Résultats réglés")} className="rounded-lg bg-mist px-3 py-2.5 font-bold">Régler les résultats</button>
-            <button onClick={() => act("calibrate", {}, "Recalibrage lancé")} className="rounded-lg bg-mist px-3 py-2.5 font-bold">Recalibrer le modèle</button>
+            <button onClick={() => act("analyze", {}, "Analyse lancée")} disabled={status.pipeline.running} className="rounded-lg bg-mist px-3 py-2.5 font-bold disabled:opacity-50">Relancer l&apos;analyse</button>
+            <button onClick={() => act("settle", {}, "Résultats réglés")} disabled={status.pipeline.running} className="rounded-lg bg-mist px-3 py-2.5 font-bold disabled:opacity-50">Régler les résultats</button>
+            <button onClick={() => act("calibrate", {}, "Recalibrage lancé")} disabled={status.pipeline.running} className="rounded-lg bg-mist px-3 py-2.5 font-bold disabled:opacity-50">Recalibrer le modèle</button>
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-steel sm:grid-cols-4">
             {Object.entries(status.counts).map(([k, v]) => (
@@ -224,7 +237,7 @@ export function AdminPanel() {
             <div key={r.id} className="px-4 py-2">
               <div className="flex justify-between gap-2">
                 <span className="font-semibold">{r.provider}, {r.kind}</span>
-                <span className={r.status === "error" ? "font-semibold text-brick" : r.status === "ok" ? "text-pitch-deep" : "text-steel"}>{r.status}</span>
+                <span className={r.status === "error" ? "font-semibold text-brick" : r.status === "ok" ? "text-pitch-deep" : "text-steel"}>{{ ok: "réussi", error: "erreur", running: "en cours", skipped: "ignoré" }[r.status] ?? r.status}</span>
               </div>
               <div className="text-steel">{fmt(r.started_at)} : {r.message}</div>
             </div>
