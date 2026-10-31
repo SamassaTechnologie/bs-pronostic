@@ -12,6 +12,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from .api.admin import cron_router
 from .api.admin import router as admin_router
 from .api.public import router as public_router
+from .api.catalog import router as catalog_router
 from .config import get_settings
 from .db import Base, SessionLocal, engine
 from .seed import seed_reference_data
@@ -102,6 +103,7 @@ def create_app() -> FastAPI:
     app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in cfg.cors_origins.split(",") if o.strip()],
                        allow_methods=["GET", "POST", "PUT"], allow_headers=["*"])
     app.include_router(public_router)
+    app.include_router(catalog_router)
     app.include_router(admin_router)
     app.include_router(cron_router)
 

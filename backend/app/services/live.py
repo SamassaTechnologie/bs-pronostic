@@ -125,8 +125,24 @@ def _pick_state(p: Prediction, m: Match, live: Optional[dict]) -> str:
     return "Gagnant si le score ne bouge plus" if res else "Perdant si le score ne bouge plus"
 
 
-def live_board(db: Session, force: bool = False) -> dict:
-    """Matchs en cours + pronostics concernés. Les appels externes sont limités à 1 par minute."""
+RESULT_STATE = {"won": "Gagné", "lost": "Perdu", "void": "Annulé", "unverifiable": "Non vérifiable",
+                "pending": "Résultat en attente"}
+
+
+def _picks(preds: list, m: Match, lv: Optional[dict], finished: bool) -> list[dict]:
+    out = []
+    for p in preds:
+        state = RESULT_STATE.get(p.result, p.result) if finished else _pick_state(p, m, lv)
+        out.append({"market_key": p.market_key, "market_label": p.market_label, "probability": p.probability,
+                    "featured": bool(p.featured), "state": state, "result": p.result})
+    return out
+
+
+def live_board(db: Session, force: bool = False, tz_name: Optional[str] = None) -> dict:
+    """Journée en un coup d'œil : matchs en cours, à venir aujourd'hui, terminés aujourd'hui.
+    Les appels externes sont limités à 1 par minute (cache)."""
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
     with _lock:
         fresh = time.monotonic() - _cache["at"] < CACHE_SECONDS
         if force or not fresh:
@@ -137,26 +153,37 @@ def live_board(db: Session, force: bool = False) -> dict:
         error = _cache.get("error")
         refreshed = _cache.get("refreshed_at")
     now = utcnow()
-    # Matchs commencés depuis moins de 2 h 30 sans résultat final (couverts ou non par le direct).
-    started = db.scalars(select(Match).join(Competition, Match.competition_id == Competition.id).where(
-        Competition.enabled.is_(True), Match.kickoff <= now, Match.kickoff >= now - timedelta(minutes=150),
-        Match.status != "FINISHED").order_by(Match.kickoff)).unique().all()
-    ids = {m.id for m in started} | set(live)
-    if not ids:
-        return {"items": [], "refreshed_at": refreshed, "error": error}
-    matches = {m.id: m for m in db.scalars(select(Match).where(Match.id.in_(ids))).unique().all()}
-    preds = db.scalars(select(Prediction).where(Prediction.match_id.in_(ids))).unique().all()
+    try:
+        tz = ZoneInfo(tz_name or "Africa/Bamako")
+    except (ZoneInfoNotFoundError, ValueError):
+        tz = ZoneInfo("Africa/Bamako")
+    local = now.astimezone(tz)
+    day_start = local.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+    day_end = day_start + timedelta(days=1)
+    rows = db.scalars(select(Match).join(Competition, Match.competition_id == Competition.id).where(
+        Competition.enabled.is_(True),
+        Match.kickoff >= min(day_start, now - timedelta(minutes=150)),
+        Match.kickoff < max(day_end, now + timedelta(hours=6))).order_by(Match.kickoff)).unique().all()
+    extra = set(live) - {m.id for m in rows}
+    if extra:
+        rows += db.scalars(select(Match).where(Match.id.in_(extra))).unique().all()
+    preds = db.scalars(select(Prediction).where(Prediction.match_id.in_([m.id for m in rows]))).unique().all() if rows else []
     by_match: dict[int, list] = {}
     for p in preds:
         by_match.setdefault(p.match_id, []).append(p)
-    items = []
-    for mid, m in sorted(matches.items(), key=lambda kv: kv[1].kickoff):
-        lv = live.get(mid)
-        items.append({
-            "match": match_summary(m),
-            "live": lv,
-            "covered": lv is not None,
-            "picks": [{"market_key": p.market_key, "market_label": p.market_label, "probability": p.probability,
-                       "featured": bool(p.featured), "state": _pick_state(p, m, lv)} for p in by_match.get(mid, [])],
-        })
-    return {"items": items, "refreshed_at": refreshed, "error": error}
+    in_play, upcoming, finished = [], [], []
+    for m in sorted(rows, key=lambda x: x.kickoff):
+        lv = live.get(m.id)
+        if m.status == "FINISHED":
+            if m.kickoff >= day_start:
+                finished.append({"match": match_summary(m), "live": None, "covered": True,
+                                 "picks": _picks(by_match.get(m.id, []), m, None, True)})
+        elif lv is not None or (m.kickoff <= now and m.kickoff >= now - timedelta(minutes=150)):
+            in_play.append({"match": match_summary(m), "live": lv, "covered": lv is not None,
+                            "picks": _picks(by_match.get(m.id, []), m, lv, False)})
+        elif m.kickoff > now and m.status == "SCHEDULED":
+            upcoming.append({"match": match_summary(m), "live": None, "covered": False,
+                             "picks": _picks(by_match.get(m.id, []), m, None, False)})
+    finished.reverse()
+    return {"items": in_play, "live": in_play, "upcoming": upcoming, "finished": finished,
+            "refreshed_at": refreshed, "error": error}

@@ -3,6 +3,7 @@ import Link from "next/link";
 import "./globals.css";
 import { DesktopNav, Logo, MobileTabs } from "@/components/Nav";
 import { SwRegister } from "@/components/SwRegister";
+import { SearchBox } from "@/components/SearchBox";
 import { FollowsProvider } from "@/components/Follows";
 import { currentMember } from "@/lib/supabase/server";
 
@@ -32,11 +33,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <Link href="/" className="flex items-center gap-2.5">
               <Logo />
               <span className="leading-tight">
-                <span className="block font-display text-[17px] font-bold tracking-tight">SAM-Prédiction</span>
+                <span className="block whitespace-nowrap font-display text-[17px] font-bold tracking-tight">SAM-Prédiction</span>
                 <span className="block text-[11px] text-white/65">L&apos;analyse avant le pronostic.</span>
               </span>
             </Link>
-            <DesktopNav signedIn={signedIn} />
+            <div className="flex items-center gap-1">
+              <DesktopNav signedIn={signedIn} />
+              <SearchBox />
+            </div>
           </div>
         </header>
         <FollowsProvider signedIn={signedIn}>

@@ -244,3 +244,23 @@ def test_live_scores_update_results(populated, monkeypatch):
                        confidence_level="Élevée", tier="A", engine_version="t")
         assert _pick_state(p, m, {"home": 1, "away": 0}) == "Déjà validé"
         assert _pick_state(p, m, {"home": 0, "away": 0}) == "En attente de buts"
+
+
+def test_catalog_endpoints(client):
+    comps = client.get("/api/competitions").json()["items"]
+    eng = next(c for c in comps if c["code"] == "ENG1")
+    d = client.get("/api/competitions/ENG1").json()
+    assert d["competition"]["name"] == "Premier League" and len(d["standings"]) == 20
+    assert d["standings"][0]["position"] == 1 and d["standings"][0]["team"] and d["stats"]["matches"] > 200
+    assert client.get("/api/competitions/NOPE").status_code == 404
+    team_id = d["standings"][0]["team_id"]
+    t = client.get(f"/api/teams/{team_id}").json()
+    assert t["team"]["id"] == team_id and t["standing"]["position"] == 1
+    assert t["form"]["last10"]["played"] == 10 and t["recent"]
+    s = client.get("/api/search", params={"q": "manchester"}).json()
+    names = {x["name"] for x in s["teams"]}
+    assert {"Man City", "Man United"} <= names
+    assert client.get("/api/search", params={"q": "angle"}).json()["countries"] == ["Angleterre"]
+    assert any(c["code"] == "ENG1" for c in client.get("/api/search", params={"q": "premier"}).json()["competitions"])
+    live = client.get("/api/live", params={"tz": "Africa/Bamako"}).json()
+    assert {"live", "upcoming", "finished"} <= set(live)

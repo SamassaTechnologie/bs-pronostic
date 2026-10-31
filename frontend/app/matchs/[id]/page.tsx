@@ -151,18 +151,18 @@ export default async function MatchPage({ params }: { params: Promise<{ id: stri
       <Link href="/pronostics" className="mb-3 inline-block px-1 text-sm font-semibold text-sky">Retour aux pronostics</Link>
       <div className="rounded-2xl bg-night px-5 py-5 text-white">
         <div className="text-xs text-white/70">
-          {m.competition.name}, {m.competition.country}. {kickoffLabel(m.kickoff, tz)}
+          <Link href={`/ligues/${m.competition.code}`} className="underline-offset-2 hover:underline">{m.competition.name}, {m.competition.country}</Link>. {kickoffLabel(m.kickoff, tz)}
         </div>
         <div className="mt-3 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
           <div>
-            <div className="font-display text-xl font-bold leading-tight">{m.home.name}</div>
+            <Link href={`/equipes/${m.home.id}`} className="block font-display text-xl font-bold leading-tight underline-offset-2 hover:underline">{m.home.name}</Link>
             {st?.home && <div className="text-xs text-white/65">{st.home.position}e, {st.home.points} pts</div>}
           </div>
           <div className="text-center font-display text-2xl font-bold">
             {m.score ? `${m.score.home} – ${m.score.away}` : "–"}
           </div>
           <div className="text-right">
-            <div className="font-display text-xl font-bold leading-tight">{m.away.name}</div>
+            <Link href={`/equipes/${m.away.id}`} className="block font-display text-xl font-bold leading-tight underline-offset-2 hover:underline">{m.away.name}</Link>
             {st?.away && <div className="text-xs text-white/65">{st.away.position}e, {st.away.points} pts</div>}
           </div>
         </div>

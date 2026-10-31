@@ -429,10 +429,10 @@ def public_summary(db: Session = Depends(get_db)):
 
 
 @router.get("/live")
-def live(db: Session = Depends(get_db)):
-    """Matchs en cours (scores football-data.org, légèrement différés) et pronostics concernés."""
+def live(tz: Optional[str] = None, db: Session = Depends(get_db)):
+    """Journée : matchs en cours (scores football-data.org, légèrement différés), à venir et terminés."""
     from ..services.live import live_board
-    return live_board(db)
+    return live_board(db, tz_name=tz)
 
 
 @router.get("/recent-results")

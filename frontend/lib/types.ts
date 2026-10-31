@@ -187,3 +187,21 @@ export type Combo = {
   warnings: string[];
   errors: string[];
 };
+
+export type MatchAnalysisSummary = {
+  status: string;
+  picks: { market_key: string; label: string; probability: number; tier: string; confidence: number }[];
+  avoid: boolean;
+  expected_goals: { home: number; away: number } | null;
+} | null;
+
+export type StandingRow = {
+  team_id: number; team: string; position: number; played: number; wins: number; draws: number; losses: number;
+  goals_for: number; goals_against: number; goal_difference: number; points: number; form: string;
+};
+
+export type FormSummary = {
+  played: number; sequence?: string; wins?: number; draws?: number; losses?: number; points_per_match?: number;
+  goals_for_avg?: number; goals_against_avg?: number; over25_rate?: number; btts_rate?: number; clean_sheets?: number;
+  corners_total_avg?: number; cards_total_avg?: number;
+};

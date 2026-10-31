@@ -2,6 +2,7 @@ import Link from "next/link";
 import { backend, userTz } from "@/lib/api";
 import type { Meta, PickCard as Pick } from "@/lib/types";
 import { PickCard } from "@/components/PickCard";
+import { GroupedPicks } from "@/components/GroupedPicks";
 import { Empty, ErrorBox } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,23 @@ export default async function Pronostics({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   const tz = await userTz();
   const best = one(sp, "best") === "1";
-  const q = new URLSearchParams({ tz, limit: "80" });
+  const list = one(sp, "vue") === "liste" || best;
+  const day = one(sp, "jour");
+  const isoDay = (offset: number) => new Intl.DateTimeFormat("fr-CA", { timeZone: tz }).format(new Date(Date.now() + offset * 86400000));
+  const dayTabs: [string, string, string][] = [["", "Tous", ""], ["0", "Aujourd'hui", isoDay(0)], ["1", "Demain", isoDay(1)], ["2", "Après-demain", isoDay(2)]];
+  const q = new URLSearchParams({ tz, limit: list ? "80" : "250", sort: list ? "score" : "kickoff" });
+  const chosen = dayTabs.find((t) => t[0] === day && day !== "");
+  if (chosen) {
+    q.set("date_from", chosen[2]);
+    q.set("date_to", chosen[2]);
+  }
+  const keep = (extra: Record<string, string>) => {
+    const u = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) if (typeof v === "string" && v) u.set(k, v);
+    for (const [k, v] of Object.entries(extra)) (v ? u.set(k, v) : u.delete(k));
+    const s = u.toString();
+    return s ? `/pronostics?${s}` : "/pronostics";
+  };
   const map: Record<string, string> = {
     date_from: "from", date_to: "to", competition: "competition", country: "country", team: "team", market: "market",
     tier: "tier", min_odds: "min_odds", max_odds: "max_odds", sort: "sort",
@@ -39,7 +56,7 @@ export default async function Pronostics({ searchParams }: { searchParams: Promi
   const th = m ? [m.settings.tier_c, m.settings.tier_b, m.settings.tier_a] : undefined;
   const countries = m ? [...new Set(m.competitions.map((c) => c.country))].sort() : [];
   const families = m ? [...new Map(m.markets.map((x) => [x.family, x.family_label])).entries()] : [];
-  const activeFilters = Object.keys(sp).filter((k) => one(sp, k) && k !== "sort").length;
+  const activeFilters = Object.keys(sp).filter((k) => one(sp, k) && !["sort", "jour", "vue"].includes(k)).length;
 
   return (
     <>
@@ -49,7 +66,7 @@ export default async function Pronostics({ searchParams }: { searchParams: Promi
           <p className="text-sm text-steel">
             {best
               ? "Une sélection par match : probabilité, confiance et valeur combinées."
-              : "Sélections retenues par le moteur. Cochez « tous les marchés » pour explorer au-delà."}
+              : "Sélections retenues par le moteur, classées par championnat. Touchez un match pour l'analyse complète."}
           </p>
         </div>
       </div>
@@ -68,12 +85,33 @@ export default async function Pronostics({ searchParams }: { searchParams: Promi
         )}
       </div>
 
-      <details className="mb-4 rounded-xl border border-line bg-white" open={activeFilters > 0 && !best}>
+      {!best && (
+        <div className="mb-3 space-y-2">
+          <div className="scroll-x -mx-3.5 flex gap-1.5 px-3.5" role="tablist" aria-label="Jour">
+            {dayTabs.map(([k, label]) => (
+              <Link key={k || "all"} href={keep({ jour: k })} role="tab" aria-selected={day === k} scroll={false}
+                className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${day === k ? "bg-night text-white" : "bg-white text-night"}`}>
+                {label}
+              </Link>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-1 rounded-lg bg-white p-1" role="tablist" aria-label="Présentation">
+            <Link href={keep({ vue: "" })} role="tab" aria-selected={!list} scroll={false}
+              className={`rounded-md py-2 text-center text-sm font-bold ${!list ? "bg-night text-white" : "text-steel"}`}>Par championnat</Link>
+            <Link href={keep({ vue: "liste" })} role="tab" aria-selected={list} scroll={false}
+              className={`rounded-md py-2 text-center text-sm font-bold ${list ? "bg-night text-white" : "text-steel"}`}>Détail par pronostic</Link>
+          </div>
+        </div>
+      )}
+
+      <details className="mb-4 rounded-xl border border-line bg-white" open={activeFilters > 0 && !best && !one(sp, "jour") && !one(sp, "vue")}>
         <summary className="flex items-center justify-between px-4 py-3 text-sm font-semibold">
           <span>Filtres{activeFilters ? ` (${activeFilters})` : ""}</span>
           <span className="text-steel" aria-hidden>▾</span>
         </summary>
         <form method="get" className="grid grid-cols-2 gap-3 border-t border-line p-4 md:grid-cols-4">
+          {day && <input type="hidden" name="jour" value={day} />}
+          {one(sp, "vue") && <input type="hidden" name="vue" value={one(sp, "vue")} />}
           <label className="text-xs text-steel">
             Du
             <input type="date" name="from" defaultValue={one(sp, "from")} className={field} />
@@ -170,11 +208,15 @@ export default async function Pronostics({ searchParams }: { searchParams: Promi
       ) : res.data.items.length ? (
         <>
           <p className="mb-2 px-1 text-xs text-steel">{res.data.count} résultat{res.data.count > 1 ? "s" : ""}</p>
-          <div className="grid gap-3 md:grid-cols-2">
-            {res.data.items.map((p) => (
-              <PickCard key={`${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} />
-            ))}
-          </div>
+          {list ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {res.data.items.map((p) => (
+                <PickCard key={`${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} />
+              ))}
+            </div>
+          ) : (
+            <GroupedPicks items={res.data.items} tz={tz} />
+          )}
         </>
       ) : (
         <Empty title="Aucun pronostic ne correspond">
