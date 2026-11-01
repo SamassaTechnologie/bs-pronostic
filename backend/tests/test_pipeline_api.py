@@ -396,6 +396,8 @@ def test_ai_analysis_grounded(populated, client, monkeypatch):
     pc = allowed_percents(dossier)
     assert unverified_numbers("64 % de chances", allowed, pc) == []
     assert unverified_numbers("91 % de victoires", allowed, pc) == ["91 %"]  # 91 existe, mais pas en pourcentage
+    d2 = {"difference_de_buts": -7, "confiance_sur_100": 84}
+    assert unverified_numbers("différence de -7, confiance de 84 %", allowed_numbers(d2), allowed_percents(d2)) == []
     content, removed = sanitize({"resume": "Cote 1,44. Il gagne 72 % du temps.", "pronostic_principal": {"cle": "1"}},
                                 dossier, {"1"})
     assert content["resume"] == "Cote 1,44." and removed == 1

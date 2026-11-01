@@ -193,6 +193,7 @@ def allowed_numbers(dossier: Any) -> set[str]:
         elif isinstance(v, bool) or v is None:
             return
         elif isinstance(v, (int, float)):
+            v = abs(v)  # le signe « - » n'est pas lu avec le nombre (« -7 » → « 7 »)
             out.add(_norm(f"{v}"))
             if isinstance(v, float):
                 out.add(_norm(f"{v:.1f}"))
@@ -218,7 +219,7 @@ def allowed_percents(dossier: Any) -> set[str]:
         elif isinstance(v, (list, tuple)):
             for x in v:
                 walk(x, key)
-        elif isinstance(v, (int, float)) and not isinstance(v, bool) and "pct" in key:
+        elif isinstance(v, (int, float)) and not isinstance(v, bool) and ("pct" in key or "confiance" in key):  # confiance /100 lisible en %
             out.add(_norm(f"{v}"))
         elif isinstance(v, str):
             out.update(_norm(m) for m in _PCT.findall(v))
