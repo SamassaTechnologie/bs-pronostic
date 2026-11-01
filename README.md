@@ -185,6 +185,17 @@ Générer des secrets : `python -c "import secrets; print(secrets.token_urlsafe(
   buts (prochain but, minute, premier/dernier buteur d'équipe, équipe menée, durée de la marque, etc.).
 - **Mes paris** : état de chaque sélection (à venir, en direct avec score, minute et « gagnante pour l'instant »,
   terminé avec le score), progression du combiné, actualisation chaque minute pendant les matchs.
+- **Marchés étendus dans les pronostics** : `scripts/backtest_extended.py` rejoue 10 587 matchs (16 championnats) et
+  évalue chaque marché étendu hors échantillon (5 539 matchs) ; 223 sur 249 sont validés (calibration fidèle à
+  2 points près, meilleure que la fréquence de base, zone ≥ 70 % fidèle à 3 points) et enregistrés dans
+  `app/engine/extended_calibration.json`. Ces marchés entrent dans l'analyse avec leur probabilité calibrée ; au plus
+  un pronostic étendu par match, retenu seulement s'il est plus solide. La Sélection SAM reste sur les marchés
+  principaux. Réglage `extended_in_picks`.
+- **Fiche Jouer d'un match** : onglets Populaires, Résultat, Buts, Handicaps, Mi-temps, Équipes, Combinés, Score
+  exact, Corners, Cartons ; blocs repliables en grilles (lignes × colonnes) avec la probabilité SAM sous chaque cote
+  (`app/services/market_layout.py`).
+- **Corners et cartons** : récupérés auprès d'API-Football dès la fin des matchs qui attendent ces chiffres pour être
+  réglés (8 au plus par synchronisation) ; sinon via football-data.co.uk sous quelques jours. Le coupon l'indique.
 - Variables Vercel supplémentaires : `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 - Supabase → Authentication → URL Configuration : *Site URL* = l'adresse du site, *Redirect URLs* = `https://VOTRE-SITE/auth/callback`.
 

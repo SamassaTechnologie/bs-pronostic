@@ -19,6 +19,7 @@ DEFAULT_SETTINGS: dict = {
     "max_daily_picks": 15,
     "days_ahead": 3,
     "enabled_markets": list(DISPLAY_KEYS),
+    "extended_in_picks": True,  # marchés étendus validés par backtest admis dans les pronostics (1 par match)
     # Sélection SAM du jour : courte liste, critères renforcés
     "featured_min_probability": 0.75,
     "featured_min_confidence": 70,

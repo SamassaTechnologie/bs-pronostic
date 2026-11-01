@@ -92,7 +92,7 @@ def test_import_and_analysis(populated, season):
         assert db.scalar(select(func.count(OddsQuote.id))) > 0
         an = db.scalars(select(Analysis)).first()
         p = an.payload
-        assert p["status"] == "ok" and len(p["markets"]) == len(DISPLAY_KEYS) and p["expected_goals"]["home"] > 0
+        assert p["status"] == "ok" and len([m for m in p["markets"] if not m.get("extended")]) == len(DISPLAY_KEYS) and p["expected_goals"]["home"] > 0
         assert p["data_quality"]["corners_available"] and p["data_quality"]["cards_available"]
         one = next(m for m in p["markets"] if m["key"] == "1")
         assert one["odds"] and one["implied_probability"] and one["bookmaker"] == "Moyenne"
@@ -538,3 +538,17 @@ def test_extended_markets_engine():
     assert x.settle("e:HF1/2", 1, 2, 1, 0) == "won" and x.settle("e:HF1/2", 1, 2, None, None) is None
     assert x.settle("e:1&BY", 2, 1, 0, 0) == "won" and x.settle("e:CS2-1", 2, 1, 0, 0) == "won"
     assert x.settle("e:W1NIL", 1, 0, 0, 0) == "won" and x.settle("e:HM2", 1, 3, 1, 0) == "won"
+
+
+def test_extended_markets_in_predictions(populated):
+    """Marchés étendus validés par backtest : présents dans l'analyse, au plus un pronostic par match, réglés."""
+    from app.engine.extended_picks import validated
+    assert len(validated()) > 150
+    with SessionLocal() as db:
+        ans = db.scalars(select(Analysis)).all()
+        xs = [m for a in ans for m in a.payload["markets"] if m.get("extended")]
+        assert xs and all(m["key"] in validated() and m["probability"] >= 0.70 for m in xs)
+        assert all(sum(k.startswith("e:") for k in a.payload["picks"]) <= 1 for a in ans)
+        preds = db.scalars(select(Prediction).where(Prediction.market_key.startswith("e:"))).all()
+        assert all(not p.featured for p in preds)
+        assert any(p.result in ("won", "lost") for p in preds) or not preds

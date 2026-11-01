@@ -460,6 +460,49 @@ def _af_enrich(db: Session, af: ApiFootball, now: datetime, max_fixtures: int) -
     return _run(db, af.name, "blessures-cotes", work)
 
 
+def _af_match_stats(db: Session, af: ApiFootball, now: datetime, max_fixtures: int) -> dict:
+    """Corners et cartons des matchs terminés qui attendent ces chiffres pour être réglés (pronostics ou paris).
+    football-data.co.uk les publie avec quelques jours de retard ; API-Football les donne dès la fin du match."""
+    from ..models import Bet, BetLeg, Prediction
+
+    def work(run: SyncRun) -> tuple[int, str]:
+        recent = now - timedelta(days=4)
+        need = set(db.scalars(select(Prediction.match_id).join(Match, Prediction.match_id == Match.id).where(
+            Prediction.result == "pending", Match.kickoff >= recent,
+            Prediction.market_key.startswith("C_", autoescape=True) | Prediction.market_key.startswith("K_", autoescape=True))).all())
+        need |= set(db.scalars(select(BetLeg.match_id).join(Bet, BetLeg.bet_id == Bet.id).where(
+            BetLeg.result == "pending", BetLeg.market_key.startswith("C_", autoescape=True) | BetLeg.market_key.startswith("K_", autoescape=True))).all())
+        ms = [m for m in (db.get(Match, mid) for mid in need) if m is not None and m.status == "FINISHED"
+              and m.api_football_fixture_id and (m.home_corners is None or m.home_yellow is None)
+              and m.kickoff >= recent][:max_fixtures]
+        done, errors = 0, []
+        for m in ms:
+            try:
+                stats = af.fixture_statistics(m.api_football_fixture_id)
+            except ProviderError as exc:
+                errors.append(str(exc))
+                break
+            h = stats.get(m.home_team.api_football_id) if m.home_team.api_football_id else None
+            a = stats.get(m.away_team.api_football_id) if m.away_team.api_football_id else None
+            if (h is None or a is None) and len(stats) == 2:
+                h, a = list(stats.values())  # ordre domicile puis extérieur renvoyé par l'API
+            if not h or not a:
+                continue
+            if h.get("corners") is not None and a.get("corners") is not None and m.home_corners is None:
+                m.home_corners, m.away_corners = h["corners"], a["corners"]
+            if h.get("yellow") is not None and a.get("yellow") is not None and m.home_yellow is None:
+                m.home_yellow, m.away_yellow = h["yellow"], a["yellow"]
+                m.home_red, m.away_red = h.get("red") or 0, a.get("red") or 0
+            db.commit()
+            done += 1
+        msg = f"{done} match(s) complété(s) : corners et cartons ({len(ms)} en attente)"
+        if errors and not done:
+            raise ProviderError(errors[0])
+        return done, msg
+
+    return _run(db, af.name, "statistiques", work)
+
+
 # ---------------------------------------------------------------------------
 # football-data.org
 # ---------------------------------------------------------------------------
@@ -541,6 +584,9 @@ def run_sync(db: Session, kinds: Iterable[str] = ("history", "upcoming", "enrich
         if "upcoming" in kinds and any(c.api_football_id for c in comps):
             results.append(_af_fixtures(db, af, comps, now, int(sel["days_ahead"])))
         if "enrich" in kinds:
+            remaining = cfg.api_football_daily_budget - used - af.requests_made
+            if remaining >= 2:
+                results.append(_af_match_stats(db, af, now, max_fixtures=min(8, remaining // 2)))
             remaining = cfg.api_football_daily_budget - used - af.requests_made
             if remaining >= 2:
                 results.append(_af_enrich(db, af, now, max_fixtures=min(6, remaining // 2)))

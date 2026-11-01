@@ -150,7 +150,10 @@ def match_markets(db: Session, match_id: int, now: Optional[datetime] = None) ->
         xf.setdefault(r["family"], []).append(r)
     groups += [{"family": f, "label": ext.FAMILIES[f], "markets": xf[f], "extended": True}
                for f in ext.FAMILY_ORDER if f in xf]
-    return {"match": p.get("match"), "open": _open(m, now), "groups": groups,
+    from .market_layout import build as build_layout
+    allrows = [r for g in groups for r in g["markets"]]
+    tabs = build_layout(allrows, m.home_team.name, m.away_team.name)
+    return {"match": p.get("match"), "open": _open(m, now), "groups": groups, "tabs": tabs,
             "expected_goals": p.get("expected_goals"), "avoid_reasons": p.get("avoid_reasons") or [],
             "message": None if _open(m, now) else "Paris fermés : le match a commencé ou est terminé"}
 

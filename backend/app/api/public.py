@@ -15,6 +15,7 @@ from ..ai.providers import provider_info as ai_provider_info
 from ..config import get_settings
 from ..engine.combos import Leg, MatchModel, evaluate_combo, generate_combos
 from ..engine.value import naive_equivalent, reference_odds, short_equivalent, target_combos
+from ..engine.extended import FAMILIES as EXT_FAMILIES
 from ..engine.markets import FAMILY_LABELS, MARKET_BY_KEY, DISPLAY_MARKETS, score_matrix
 from ..engine.predictor import ENGINE_VERSION
 from ..models import Analysis, Competition, Match, OddsQuote, Prediction, SyncRun
@@ -51,7 +52,7 @@ def pick_card(payload: dict, mk: dict) -> dict:
     return {
         "match": payload.get("match"),
         "market_key": mk["key"], "label": mk["label"], "short": mk.get("short"), "family": mk["family"],
-        "family_label": FAMILY_LABELS.get(mk["family"], mk["family"]),
+        "family_label": FAMILY_LABELS.get(mk["family"]) or EXT_FAMILIES.get(mk["family"], mk["family"]),
         "probability": mk["probability"], "tier": mk["tier"],
         "confidence": {"score": mk["confidence"]["score"], "level": mk["confidence"]["level"]},
         "odds": mk.get("odds"), "bookmaker": mk.get("bookmaker"), "implied_probability": mk.get("implied_probability"),
@@ -188,7 +189,7 @@ def dashboard(tz: Optional[str] = None, db: Session = Depends(get_db)):
         top5.append(c)
         if len(top5) == 5:
             break
-    markets = sorted(({"key": k, "label": MARKET_BY_KEY[k].label, "count": len(v),
+    markets = sorted(({"key": k, "label": v[0]["label"], "count": len(v),
                        "avg_probability": round(sum(c["probability"] for c in v) / len(v), 4),
                        "avg_confidence": round(sum(c["confidence"]["score"] for c in v) / len(v), 1)}
                       for k, v in market_agg.items()), key=lambda d: (-d["count"], -d["avg_probability"]))

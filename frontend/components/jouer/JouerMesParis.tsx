@@ -17,7 +17,7 @@ function ResultIcon({ r }: { r: string }) {
   if (r === "won") return <span className="flex h-6 w-6 items-center justify-center rounded-full bg-pitch text-white" aria-label="Gagnée"><svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden><path d="M5 12l5 5 9-10" /></svg></span>;
   if (r === "lost") return <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brick text-white" aria-label="Perdue"><svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden><path d="M6 6l12 12M18 6L6 18" /></svg></span>;
   if (r === "void") return <span className="flex h-6 w-6 items-center justify-center rounded-full bg-line text-[10px] font-bold text-steel" aria-label="Remboursée">R</span>;
-  return <span className="block h-6 w-6 shrink-0 rounded-full border-2 border-line" aria-label="En attente" />;
+  return <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 border-amber/60 text-amber" aria-label="En attente"><svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden><path d="M12 7v5l3 2" /></svg></span>;
 }
 
 /** Ligne d'état du match d'une sélection, comme sur un coupon de bookmaker. */
@@ -25,7 +25,18 @@ function LegState({ l, tz }: { l: BetLeg; tz: string }) {
   const lv = l.live;
   if (l.result !== "pending" || lv?.state === "finished") {
     const sc = lv?.state === "finished" ? `${lv.home}-${lv.away}` : l.score;
-    return <span className="text-xs text-steel">Terminé{sc ? ` · ${sc}` : ""}{lv?.ht_home != null ? ` (mi-temps ${lv.ht_home}-${lv.ht_away})` : ""}</span>;
+    const waiting = l.result === "pending";
+    const stat = /corner/i.test(l.label) ? "corners" : /carton/i.test(l.label) ? "cartons" : "statistiques";
+    return (
+      <span className="block text-xs">
+        <span className="text-steel">Terminé{sc ? ` · ${sc}` : ""}{lv?.ht_home != null ? ` (mi-temps ${lv.ht_home}-${lv.ht_away})` : ""}</span>
+        {waiting && (
+          <span className="mt-0.5 block font-semibold text-amber">
+            En attente du nombre de {stat} officiel : réglement automatique dès sa publication (en général sous 24 à 72 h).
+          </span>
+        )}
+      </span>
+    );
   }
   if (lv?.state === "live") {
     return (

@@ -13,6 +13,7 @@ from ..engine.calibration import calibrators_from_dict, load_default_calibration
 from ..engine.features import TeamHistory, standings
 from ..engine.predictor import ENGINE_VERSION, EngineParams, FixtureContext, analyze_fixture, fit_league_models
 from ..engine.types import MatchData, OddsInfo
+from ..engine.extended_picks import add_to_payload as add_extended_markets
 from ..engine.value import best_value_per_match, value_score
 from ..models import Analysis, Calibration, Competition, Injury, Match, OddsQuote, Prediction, utcnow
 from .settings_service import get_selection_settings
@@ -152,6 +153,7 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
                                 late_season=late, standings=st)
             payload = analyze_fixture(lm, fx, history, cals, reliability, s, params)
             payload["match"] = match_summary(m)
+            add_extended_markets(payload, s)
             payload["calibration"] = {"source": cal_payload.get("source") or "aucune",
                                       "generated_at": cal_payload.get("generated_at")}
             a = db.scalar(select(Analysis).where(Analysis.match_id == m.id))
@@ -210,6 +212,8 @@ def _new_prediction(m: Match, mk: dict, now: datetime) -> Prediction:
 
 
 def featured_eligible(mk: dict, s: dict) -> bool:
+    if mk.get("extended"):
+        return False  # la Sélection SAM reste sur les marchés principaux (historique de calibration le plus long)
     if mk["probability"] < float(s["featured_min_probability"]):
         return False
     if mk["confidence"]["score"] < int(s["featured_min_confidence"]):
