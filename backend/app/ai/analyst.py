@@ -274,6 +274,7 @@ def sanitize(out: dict, dossier: dict, market_keys: set[str]) -> tuple[dict, int
     """Retire les phrases aux chiffres invérifiables et les marchés inconnus. Renvoie (contenu, nb retiré)."""
     allowed, percents = allowed_numbers(dossier), allowed_percents(dossier)
     removed = 0
+    dropped: list[dict] = []
 
     def clean(text: Any) -> str:
         nonlocal removed
@@ -281,8 +282,10 @@ def sanitize(out: dict, dossier: dict, market_keys: set[str]) -> tuple[dict, int
             return ""
         keep = []
         for s in _sentences(text):
-            if unverified_numbers(s, allowed, percents):
+            bad = unverified_numbers(s, allowed, percents)
+            if bad:
                 removed += 1
+                dropped.append({"phrase": s, "chiffres": bad})
             else:
                 keep.append(s)
         return " ".join(keep).strip()
@@ -304,6 +307,7 @@ def sanitize(out: dict, dossier: dict, market_keys: set[str]) -> tuple[dict, int
         else:
             removed += 1
     res["alternatives"] = alts[:2]
+    res["_retire"] = dropped  # passages écartés, conservés pour l'audit (non affichés)
     return res, removed
 
 
@@ -330,7 +334,7 @@ def enrich_for_display(content: dict, payload: dict) -> dict:
                 "odds": mk.get("odds"), "fair_odds": round(1 / mk["probability"], 2),
                 "is_pick": mk["key"] in (payload.get("picks") or [])}
 
-    out = {k: v for k, v in content.items() if k not in ("pronostic_principal", "alternatives")}
+    out = {k: v for k, v in content.items() if k not in ("pronostic_principal", "alternatives") and not k.startswith("_")}
     out["pronostic_principal"] = pick(content.get("pronostic_principal"))
     out["alternatives"] = [a for a in (pick(x) for x in content.get("alternatives") or []) if a]
     return out
