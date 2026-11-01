@@ -96,7 +96,16 @@ def target_combos(candidates: list[Leg], target: float = 2.0, min_legs: int = 2,
         for c in sorted(band, key=strength, reverse=True):
             if len(by_match.setdefault(c.match_id, [])) < 2:
                 by_match[c.match_id].append(c)
-        pool = sorted((c for v in by_match.values() for c in v), key=strength, reverse=True)[:40 if n == 2 else 28]
+        # Réservoir réparti sur toute la plage de cotes (sinon seules les cotes les plus basses, les plus
+        # « solides », seraient gardées et aucune combinaison n'atteindrait la cible).
+        kept = [c for v in by_match.values() for c in v]
+        buckets = 4
+        span = math.log(hi_leg / lo_leg) or 1.0
+        per_bucket = 12 if n == 2 else 8
+        pool = []
+        for b in range(buckets):
+            inb = [c for c in kept if min(buckets - 1, int(math.log(pay(c) / lo_leg) / span * buckets)) == b]
+            pool += sorted(inb, key=strength, reverse=True)[:per_bucket]
         for combo in itertools.combinations(pool, n):
             if len({c.match_id for c in combo}) < n:
                 continue

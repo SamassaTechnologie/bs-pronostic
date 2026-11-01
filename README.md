@@ -159,6 +159,14 @@ Générer des secrets : `python -c "import secrets; print(secrets.token_urlsafe(
   quota `AI_DAILY_BUDGET` (200/jour), préparation automatique des matchs de la Sélection SAM et des pronostics à cote.
   Administration : `GET /api/admin/ai/status`, `POST /api/admin/ai/test`, `DELETE /api/admin/ai/matches/{id}`.
   Sans clé : « L'analyse IA n'est pas encore activée », jamais de texte simulé.
+- **Assistant IA** (`/assistant`, bouton « IA » en haut, lien depuis l'onglet IA d'un match) : questions libres
+  (« le combiné le plus sûr pour une cote 2 », « analyse tous les marchés de ce soir »…). L'IA appelle les outils du
+  moteur (`lister_matchs`, `dossier_match`, `selections` sur toutes les familles de marchés, `combine_cote_cible`,
+  `combine_automatique`, `evaluer_combine`, `bilan_sam`) par appel de fonctions Gemini ou Groq ; elle ne calcule rien.
+  Les combinés sont insérés par référence `[[C1]]` et affichés avec les chiffres du moteur ; chaque nombre du texte
+  est contrôlé contre les résultats des outils. `POST /api/assistant`, réservé aux membres via le proxy (secret
+  partagé `ASSISTANT_TOKEN` sur Render et Vercel, identifiant du membre transmis côté serveur),
+  25 questions par membre et par jour (`ASSISTANT_MEMBER_DAILY`), 5 appels d'outils au plus par question.
 - Variables Vercel supplémentaires : `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 - Supabase → Authentication → URL Configuration : *Site URL* = l'adresse du site, *Redirect URLs* = `https://VOTRE-SITE/auth/callback`.
 

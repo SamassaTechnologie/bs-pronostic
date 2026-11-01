@@ -443,25 +443,33 @@ def combos_target(req: TargetRequest, db: Session = Depends(get_db)):
             "comparison": {"short": short_equivalent(req.target, 2), "long": naive_equivalent(req.target, 1.10)}}
 
 
-@router.post("/combos/evaluate")
-def combos_evaluate(req: EvaluateRequest, db: Session = Depends(get_db)):
+def evaluate_selections(db: Session, selections: list[tuple[int, str]]) -> dict:
+    """Évalue un combiné (probabilité jointe sur la matrice des scores pour un même match). Lève ValueError."""
     legs, models = [], {}
-    for sel in req.selections:
-        a = db.scalar(select(Analysis).where(Analysis.match_id == sel.match_id))
+    for match_id, market_key in selections:
+        a = db.scalar(select(Analysis).where(Analysis.match_id == match_id))
         if a is None or a.status != "ok":
-            raise HTTPException(422, f"Match {sel.match_id} : analyse indisponible (données insuffisantes)")
+            raise ValueError(f"Match {match_id} : analyse indisponible (données insuffisantes)")
         p = a.payload
-        mk = next((x for x in p["markets"] if x["key"] == sel.market_key and x.get("available")), None)
+        mk = next((x for x in p["markets"] if x["key"] == market_key and x.get("available")), None)
         if mk is None:
-            raise HTTPException(422, f"Marché {sel.market_key} indisponible pour ce match")
+            raise ValueError(f"Marché {market_key} indisponible pour ce match")
         legs.append(_leg(p, mk))
         eg = p.get("expected_goals")
-        if eg and sel.match_id not in models:
+        if eg and match_id not in models:
             rho = (p.get("league") or {}).get("rho", 0.0)
             mat = score_matrix(eg["home"], eg["away"], rho)
             raw = {x["key"]: x.get("raw_probability") for x in p["markets"] if x.get("available")}
-            models[sel.match_id] = MatchModel(matrix=mat, raw=raw)
+            models[match_id] = MatchModel(matrix=mat, raw=raw)
     return evaluate_combo(legs, models)
+
+
+@router.post("/combos/evaluate")
+def combos_evaluate(req: EvaluateRequest, db: Session = Depends(get_db)):
+    try:
+        return evaluate_selections(db, [(s.match_id, s.market_key) for s in req.selections])
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
 
 
 @router.get("/history")

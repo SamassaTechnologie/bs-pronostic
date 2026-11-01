@@ -395,7 +395,16 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
 
       {tab === "ia" && (
         a && a.status === "ok"
-          ? <AiAnalysis matchId={m.id} home={m.home.name} away={m.away.name} tz={tz} thresholds={th} />
+          ? <>
+              <AiAnalysis matchId={m.id} home={m.home.name} away={m.away.name} tz={tz} thresholds={th} />
+              <Link href={`/assistant?match=${m.id}`} className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-night px-4 py-3 text-white">
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold">Poser une question à l&apos;IA sur ce match</span>
+                  <span className="block text-xs text-white/70">Marché le plus sûr, pari à cote, combiné avec un autre match…</span>
+                </span>
+                <span className="shrink-0 text-sm font-bold text-pitch-soft">Demander</span>
+              </Link>
+            </>
           : <div className="mt-4"><Empty title="Données insuffisantes : aucune analyse IA possible pour ce match" /></div>
       )}
 

@@ -402,3 +402,54 @@ def test_ai_analysis_grounded(populated, client, monkeypatch):
                                 dossier, {"1"})
     assert content["resume"] == "Cote 1,44." and removed == 1
     assert check_output({}, dossier, {"1"})
+
+
+def test_assistant_tools_and_checks(populated, client, monkeypatch):
+    """Assistant : outils SAM réels, IA remplacée par un faux (test uniquement) pour vérifier les contrôles."""
+    from app.ai import assistant, providers
+    from app.services import ai_service
+
+    monkeypatch.setattr(assistant, "utcnow", lambda: NOW - timedelta(hours=12))
+    with SessionLocal() as db:
+        box = assistant.Toolbox(db)
+        ms = box.run("lister_matchs", {"periode_heures": 72})["matchs"]
+        assert ms and all("match_id" in m for m in ms)
+        mid = ms[0]["match_id"]
+        assert box.run("dossier_match", {"match_id": mid})["match_id"] == mid
+        sel = box.run("selections", {"familles": ["corners"], "probabilite_min_pct": 50})["selections"]
+        assert sel and all(s["famille"] == "Corners" for s in sel)
+        c = box.run("combine_cote_cible", {"cote_cible": 2, "periode_heures": 72})
+        assert c["combines"][0]["ref"] == "C1" and "C1" in box.combos
+        ev = box.run("evaluer_combine", {"selections": [{"match_id": mid, "cle": "1X"}, {"match_id": mid, "cle": "O1.5"}]})
+        assert "combine" in ev or "erreur" in ev
+        assert box.run("outil_pirate", {})["erreur"].startswith("Outil inconnu")
+        assert "tous" in box.run("bilan_sam", {})
+
+    monkeypatch.setattr(ai_service, "configured_providers", lambda: [object()])
+
+    class P:
+        label, model = "Fausse IA", "faux"
+
+    def fake_chat(system, hist, tools, run_tool, on_call, max_steps=5):
+        on_call()
+        r = run_tool("combine_cote_cible", {"cote_cible": 2, "periode_heures": 72})
+        ref = r["combines"][0]
+        lm = run_tool("lister_matchs", {"periode_heures": 72})["matchs"][0]
+        return (f"Voici le combiné le plus solide pour une cote 2.\n[[{ref['ref']}]]\n"
+                f"- Chance estimée : {ref['probabilite_pct']} %. Ce combiné gagne 95 % du temps.\n"
+                f"- Match à suivre : [[M:{lm['match_id']}]]\n[[C9]]"), P()
+    monkeypatch.setattr(providers, "chat_with_tools", fake_chat)
+    r = client.post("/api/assistant", json={"question": "Propose-moi le meilleur combiné cote 2"}).json()
+    assert r["status"] == "ok", r
+    assert "C1" in r["combos"] and "C9" not in r["answer"] and "95 %" not in r["answer"]
+    assert "Chance estimée" in r["answer"] and r["matches"] and r["removed"] >= 2
+    assert r["combos"]["C1"]["legs"]  # vraie carte du moteur, pas du texte de l'IA
+
+    # Jeton exigé quand il est configuré ; quota par membre.
+    from app.config import get_settings
+    monkeypatch.setattr(get_settings(), "assistant_token", "secret")
+    assert client.post("/api/assistant", json={"question": "test"}).status_code == 401
+    monkeypatch.setattr(get_settings(), "assistant_member_daily", 1)
+    h = {"X-Assistant-Token": "secret", "X-Member-Id": "membre-test"}
+    assert client.post("/api/assistant", json={"question": "Bonjour"}, headers=h).json()["status"] == "ok"
+    assert client.post("/api/assistant", json={"question": "Bonjour"}, headers=h).json()["status"] == "quota"

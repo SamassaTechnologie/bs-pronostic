@@ -41,9 +41,12 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
-    ai_daily_budget: int = 200  # générations maximum par jour (toutes sources)
+    ai_daily_budget: int = 400  # générations maximum par jour (toutes sources)
     ai_cache_hours: int = 12  # une analyse IA reste valable 12 h avant le match
     ai_timeout: float = 45.0
+    assistant_token: str = ""  # secret partagé avec le frontend (en-tête X-Assistant-Token)
+    assistant_member_daily: int = 25  # questions par membre et par jour
+    assistant_max_steps: int = 5  # appels d'outils maximum par question
 
     # Planification
     enable_scheduler: bool = True

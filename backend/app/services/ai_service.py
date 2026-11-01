@@ -179,3 +179,71 @@ def pregenerate_in_background() -> None:
 
     if configured_providers():
         threading.Thread(target=run, daemon=True, name="ia-pregenerate").start()
+
+
+# ---------------------------------------------------------------------------
+# Assistant conversationnel
+
+def _member_usage(db: Session, member: str) -> int:
+    row = db.get(ApiUsage, (f"as:{member}"[:40], date.today().isoformat()))
+    return row.requests if row else 0
+
+
+def _count_member(db: Session, member: str) -> None:
+    key = (f"as:{member}"[:40], date.today().isoformat())
+    row = db.get(ApiUsage, key)
+    if row is None:
+        db.add(ApiUsage(provider=key[0], day=key[1], requests=1))
+    else:
+        row.requests += 1
+    db.commit()
+
+
+def ask_assistant(db: Session, question: str, history: list[dict], member: Optional[str],
+                  match_id: Optional[int] = None) -> dict:
+    from ..ai.assistant import SYSTEM, TOOLS, Toolbox, check_answer, references
+    from ..ai.providers import chat_with_tools
+
+    s = get_settings()
+    if not configured_providers():
+        return {"status": "not_configured", "message": "L'assistant IA n'est pas encore activé sur ce site"}
+    who = member or "anonyme"
+    if _member_usage(db, who) >= s.assistant_member_daily:
+        return {"status": "quota", "message": f"Limite de {s.assistant_member_daily} questions par jour atteinte : "
+                                              "revenez demain."}
+    if usage_today(db) >= s.ai_daily_budget:
+        return {"status": "quota", "message": "L'assistant a atteint son quota du jour : revenez demain."}
+    _count_member(db, who)
+
+    box = Toolbox(db)
+    context = [question] + [h["text"] for h in history]
+    hist = [h for h in history if h.get("text")][-8:]
+    q = question
+    if match_id:
+        a = db.scalar(select(Analysis).where(Analysis.match_id == match_id))
+        if a is not None and a.status == "ok":
+            info = box._remember(a)
+            q = (f"(Le membre consulte la fiche du match {info['home']} – {info['away']}, match_id {match_id}.)\n"
+                 + question)
+    hist.append({"role": "user", "text": q})
+
+    def on_call() -> None:
+        if usage_today(db) >= s.ai_daily_budget:
+            raise AIError("Quota quotidien de l'IA atteint : revenez demain")
+        _count_call(db)
+
+    try:
+        text, prov = chat_with_tools(SYSTEM, hist, TOOLS, box.run, on_call, max_steps=s.assistant_max_steps)
+    except AIError as exc:
+        db.rollback()
+        return {"status": "error", "message": str(exc), "retryable": exc.retryable}
+    clean, dropped = check_answer(text, box, context)
+    if dropped:
+        log.info("Assistant : %d passage(s) écarté(s) : %s", len(dropped), dropped[:3])
+    if not clean:
+        return {"status": "error", "message": "La réponse de l'IA n'a pas passé les contrôles de fiabilité, "
+                                              "reformulez la question.", "retryable": True}
+    refs = references(clean, box)
+    return {"status": "ok", "answer": clean, "combos": refs["combos"], "matches": refs["matches"],
+            "provider": prov.label, "model": prov.model, "removed": len(dropped),
+            "remaining_today": max(0, s.assistant_member_daily - _member_usage(db, who))}

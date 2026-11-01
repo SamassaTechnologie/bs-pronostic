@@ -199,3 +199,103 @@ def call_with_fallback(system: str, user: str, schema: dict,
             log.warning("IA %s : %s", p.name, exc)
             errors.append(str(exc))
     raise AIError(" ; ".join(errors) or "Aucun fournisseur d'IA configuré")
+
+
+# ---------------------------------------------------------------------------
+# Conversation avec outils (assistant) : l'IA appelle les fonctions du moteur SAM, jamais l'inverse.
+
+
+
+def _gemini_chat(p: "GeminiProvider", system: str, history: list[dict], tools: list[dict], run_tool,
+                 on_call, max_steps: int) -> str:
+    contents = [{"role": "user" if h["role"] == "user" else "model", "parts": [{"text": h["text"]}]}
+                for h in history]
+    decl = [{"name": t["name"], "description": t["description"], "parameters": _to_gemini_schema(t["parameters"])}
+            for t in tools]
+    for step in range(max_steps + 1):
+        body = {"systemInstruction": {"parts": [{"text": system}]}, "contents": contents,
+                "tools": [{"functionDeclarations": decl}],
+                "toolConfig": {"functionCallingConfig": {"mode": "AUTO" if step < max_steps else "NONE"}},
+                "generationConfig": {"temperature": 0.4, "maxOutputTokens": 8192}}
+        on_call()
+        p._throttle.wait()
+        try:
+            r = httpx.post(f"{p._base}/models/{p.model}:generateContent", json=body, timeout=p._timeout,
+                           headers={"x-goog-api-key": p._key, "Content-Type": "application/json"})
+        except httpx.HTTPError as exc:
+            raise AIError(f"Gemini injoignable ({exc.__class__.__name__})", retryable=True) from exc
+        if r.status_code != 200:
+            raise _http_error("Gemini", r)
+        cands = r.json().get("candidates") or []
+        if not cands:
+            raise AIError("Gemini n'a renvoyé aucune réponse", retryable=True)
+        content = cands[0].get("content") or {}
+        parts = content.get("parts") or []
+        calls = [x["functionCall"] for x in parts if "functionCall" in x]
+        if not calls:
+            text = "".join(x.get("text", "") for x in parts if not x.get("thought")).strip()
+            if not text:
+                raise AIError(f"Réponse Gemini vide ({cands[0].get('finishReason')})", retryable=True)
+            return text
+        contents.append({"role": "model", "parts": parts})  # renvoyé tel quel (signatures de réflexion)
+        results = []
+        for c in calls:
+            out = run_tool(c.get("name", ""), c.get("args") or {})
+            fr = {"name": c.get("name", ""), "response": {"resultat": out}}
+            if c.get("id"):
+                fr["id"] = c["id"]
+            results.append({"functionResponse": fr})
+        contents.append({"role": "user", "parts": results})
+    raise AIError("Trop d'étapes pour répondre", retryable=True)
+
+
+def _groq_chat(p: "GroqProvider", system: str, history: list[dict], tools: list[dict], run_tool,
+               on_call, max_steps: int) -> str:
+    messages = [{"role": "system", "content": system}] + [
+        {"role": "user" if h["role"] == "user" else "assistant", "content": h["text"]} for h in history]
+    defs = [{"type": "function", "function": t} for t in tools]
+    for step in range(max_steps + 1):
+        body = {"model": p.model, "temperature": 0.4, "max_tokens": 4096, "messages": messages,
+                "tools": defs, "tool_choice": "auto" if step < max_steps else "none"}
+        on_call()
+        p._throttle.wait()
+        try:
+            r = httpx.post(f"{p._base}/chat/completions", json=body, timeout=p._timeout,
+                           headers={"Authorization": f"Bearer {p._key}"})
+        except httpx.HTTPError as exc:
+            raise AIError(f"Groq injoignable ({exc.__class__.__name__})", retryable=True) from exc
+        if r.status_code != 200:
+            raise _http_error("Groq", r)
+        choices = r.json().get("choices") or []
+        if not choices:
+            raise AIError("Groq n'a renvoyé aucune réponse", retryable=True)
+        msg = choices[0]["message"]
+        calls = msg.get("tool_calls") or []
+        if not calls:
+            text = (msg.get("content") or "").strip()
+            if not text:
+                raise AIError("Réponse Groq vide", retryable=True)
+            return text
+        messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
+        for c in calls:
+            try:
+                args = json.loads(c["function"].get("arguments") or "{}")
+            except json.JSONDecodeError:
+                args = {}
+            out = run_tool(c["function"]["name"], args)
+            messages.append({"role": "tool", "tool_call_id": c["id"], "content": json.dumps(out, ensure_ascii=False)})
+    raise AIError("Trop d'étapes pour répondre", retryable=True)
+
+
+def chat_with_tools(system: str, history: list[dict], tools: list[dict], run_tool, on_call,
+                    max_steps: int = 5, providers: Optional[list[AIProvider]] = None) -> tuple[str, AIProvider]:
+    """Boucle question → appels d'outils SAM → réponse, avec bascule vers le fournisseur de secours."""
+    errors = []
+    for p in providers if providers is not None else configured_providers():
+        try:
+            fn = _gemini_chat if isinstance(p, GeminiProvider) else _groq_chat
+            return fn(p, system, history, tools, run_tool, on_call, max_steps), p
+        except AIError as exc:
+            log.warning("Assistant %s : %s", p.name, exc)
+            errors.append(str(exc))
+    raise AIError(" ; ".join(errors) or "Aucun fournisseur d'IA configuré")

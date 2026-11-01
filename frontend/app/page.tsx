@@ -100,6 +100,15 @@ export default async function Home() {
         )}
       </Section>
 
+      <Link href="/assistant" className="mt-7 flex items-center justify-between gap-3 rounded-2xl bg-night px-4 py-4 text-white">
+        <span className="min-w-0">
+          <span className="block text-[11px] font-bold uppercase tracking-wide text-white/60">Nouveau</span>
+          <span className="block font-display text-lg font-bold leading-tight">Assistant IA</span>
+          <span className="mt-0.5 block text-xs text-white/75">« Propose-moi le combiné le plus sûr pour une cote 2 », « Analyse tous les marchés de ce soir »…</span>
+        </span>
+        <span className="shrink-0 rounded-lg bg-pitch px-3 py-2 text-sm font-bold">Demander</span>
+      </Link>
+
       <Section title="Pronostics à cote" action={<MoreLink href="/historique?cote=1">Bilan</MoreLink>}>
         <p className="-mt-1 mb-3 px-1 text-sm text-steel">
           Cote d&apos;environ {num(d.value_settings.value_min_odds)} à {num(d.value_settings.value_max_odds)}, probabilité d&apos;au

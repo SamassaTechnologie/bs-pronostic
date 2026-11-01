@@ -6,7 +6,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -326,3 +327,29 @@ def match_ai(match_id: int, db: Session = Depends(get_db)):
     if res["status"] == "not_found":
         raise HTTPException(404, res["message"])
     return res
+
+
+class AssistantTurn(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    text: str = Field(max_length=4000)
+
+
+class AssistantRequest(BaseModel):
+    question: str = Field(min_length=2, max_length=600)
+    history: list[AssistantTurn] = Field(default_factory=list, max_length=12)
+    match_id: Optional[int] = None
+
+
+@router.post("/assistant")
+def assistant(req: AssistantRequest, db: Session = Depends(get_db),
+              x_assistant_token: Optional[str] = Header(default=None),
+              x_member_id: Optional[str] = Header(default=None)):
+    """Assistant IA : réponses construites avec les outils du moteur SAM (combinés, sélections, dossiers)."""
+    import hmac
+    from ..config import get_settings
+    from ..services.ai_service import ask_assistant
+    expected = get_settings().assistant_token
+    if expected and not hmac.compare_digest(x_assistant_token or "", expected):
+        raise HTTPException(401, "Accès réservé à l'application SAM-Prédiction")
+    return ask_assistant(db, req.question.strip(), [h.model_dump() for h in req.history],
+                         (x_member_id or "")[:36] or None, req.match_id)
