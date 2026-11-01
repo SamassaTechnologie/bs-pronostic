@@ -7,7 +7,7 @@ import { CouponBar, JouerHeader, Legend, OddsButton, type OddsRow, type Wallet }
 
 type Data = {
   match: MatchSummary | null; open: boolean; message: string | null; wallet: Wallet;
-  groups: { family: string; label: string; markets: OddsRow[] }[];
+  groups: { family: string; label: string; markets: OddsRow[]; extended?: boolean }[];
   expected_goals: { home: number; away: number } | null; avoid_reasons: string[];
 };
 
@@ -55,7 +55,7 @@ export function JouerMatch({ id, tz }: { id: number; tz: string }) {
             ))}
           </div>
           <div className="mt-2 space-y-2.5">
-            {groups.map((g) => (
+            {groups.filter((g) => !g.extended).map((g) => (
               <section key={g.family} className="rounded-xl border border-line bg-white p-3">
                 <h2 className="mb-2 text-sm font-bold">{g.label}</h2>
                 <div className="grid grid-cols-3 gap-1.5">
@@ -64,6 +64,27 @@ export function JouerMatch({ id, tz }: { id: number; tz: string }) {
                   ))}
                 </div>
               </section>
+            ))}
+            {groups.some((g) => g.extended) && (
+              <p className="px-1 pt-1 text-[11px] leading-relaxed text-steel">
+                Marchés supplémentaires : probabilités du modèle de buts SAM, non calibrées par backtest. Cote SAM uniquement.
+              </p>
+            )}
+            {groups.filter((g) => g.extended).map((g) => (
+              <details key={g.family} open={fam === g.family} className="group overflow-hidden rounded-xl border border-line bg-white">
+                <summary className="flex cursor-pointer items-center justify-between px-3 py-3 text-sm font-bold">
+                  <span>{g.label}</span>
+                  <span className="flex items-center gap-2 text-xs font-semibold text-steel">{g.markets.length}<span className="transition-transform group-open:rotate-180" aria-hidden>▾</span></span>
+                </summary>
+                <ul className="divide-y divide-mist border-t border-line">
+                  {g.markets.map((r) => (
+                    <li key={r.key} className="flex items-center justify-between gap-3 px-3 py-1.5">
+                      <span className="min-w-0 text-[13.5px] leading-snug">{r.label}</span>
+                      <span className="w-[86px] shrink-0"><OddsButton row={r} matchId={id} matchLabel={label} label=" " showProb open={d.open} /></span>
+                    </li>
+                  ))}
+                </ul>
+              </details>
             ))}
           </div>
           <Link href={`/matchs/${id}`} className="mt-3 block text-center text-sm font-semibold text-sky">Voir l&apos;analyse complète du match</Link>

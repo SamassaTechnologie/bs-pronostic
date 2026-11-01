@@ -114,7 +114,6 @@ def place(req: BetRequest, db: Session = Depends(get_db), who=Depends(member)):
 @router.post("/devis")
 def quote(req: BetRequest, db: Session = Depends(get_db), who=Depends(member)):
     """Cotes et probabilité SAM du coupon, relues côté serveur (sans enregistrer de pari)."""
-    from .public import evaluate_selections
     now = _now()
     legs, errors = [], []
     for s in req.selections:
@@ -136,10 +135,9 @@ def quote(req: BetRequest, db: Session = Depends(get_db), who=Depends(member)):
             for l in legs:
                 total *= l["odds"]
             total = round(total, 2)
-            try:
-                sam_p = evaluate_selections(db, [(l["match_id"], l["market_key"]) for l in legs]).get("probability")
-            except ValueError:
-                sam_p = None
+            from ..models import BetLeg
+            sam_p = game.combo_probability(db, [(l["match_id"], l["market_key"]) for l in legs],
+                                           [BetLeg(probability=l["probability"]) for l in legs])
     return {"legs": legs, "errors": errors, "total_odds": total, "sam_probability": sam_p, "combo_error": combo_error,
             "wallet": _wallet_row(db, *who), "min_stake": game.MIN_STAKE, "max_stake": game.MAX_STAKE}
 
@@ -151,5 +149,6 @@ def my_bets(statut: str = Query("en-cours", pattern="^(en-cours|termines)$"), db
     q = select(Bet).where(Bet.member_id == mid)
     q = q.where(Bet.status == "pending") if statut == "en-cours" else q.where(Bet.status != "pending")
     bets = db.scalars(q.order_by(Bet.created_at.desc()).limit(50)).unique().all()
-    return {"wallet": _wallet_row(db, mid, name), "bets": [game.bet_row(b) for b in bets],
+    now = _now()
+    return {"wallet": _wallet_row(db, mid, name), "bets": [game.bet_row(b, db, now) for b in bets],
             "ranking": game.ranking(db, mid, _now())}

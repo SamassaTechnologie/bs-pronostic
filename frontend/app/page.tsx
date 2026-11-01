@@ -15,6 +15,8 @@ import { kickoffLabel, RESULT_LABEL } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
+type LiveItem = { match: MatchSummary; live: { home?: number | null; away?: number | null; minute?: string | number | null } | null; picks?: unknown[] };
+
 type Dashboard = {
   date: string;
   last_sync: string | null;
@@ -45,37 +47,96 @@ export default async function Home() {
     const summary = await backend<Parameters<typeof Landing>[0]["s"]>("/api/public-summary");
     return <Landing s={summary.ok ? summary.data : null} />;
   }
-  const [dash, meta, recent] = await Promise.all([
+  const [dash, meta, recent, liveRes] = await Promise.all([
     backend<Dashboard>(`/api/dashboard?tz=${encodeURIComponent(tz)}`),
     backend<Meta>("/api/meta", { revalidate: 120 }),
     backend<{ settled: HistoryRow[]; waiting: HistoryRow[] }>("/api/recent-results?limit=8"),
+    backend<{ live: LiveItem[] }>(`/api/live?tz=${encodeURIComponent(tz)}`),
   ]);
+  const live = liveRes.ok ? liveRes.data.live : [];
   if (!dash.ok) return <ErrorBox message={dash.error} />;
   const d = dash.data;
   const s = meta.data?.settings;
   const th = s ? [s.tier_c, s.tier_b, s.tier_a] : undefined;
   const longDate = new Intl.DateTimeFormat("fr-FR", { timeZone: tz, weekday: "long", day: "numeric", month: "long" }).format(new Date());
+  const hour = Number(new Intl.DateTimeFormat("fr-FR", { timeZone: tz, hour: "numeric", hour12: false }).format(new Date()));
+  const hello = hour >= 18 || hour < 5 ? "Bonsoir" : "Bonjour";
+  const first = (me.name || "").trim().split(/\s+/)[0];
+  const settled = d.stats.history_settled;
+  const tiers = meta.data?.calibration?.tiers;
 
   return (
     <>
-      <div className="mb-3 px-1">
-        <h1 className="font-display text-2xl font-bold tracking-tight first-letter:uppercase">{longDate}</h1>
-        <p className="text-sm text-steel">
-          {d.stats.matches_analysed} matchs analysés sur {s?.days_ahead ?? 3} jours, {d.stats.picks} pronostics retenus.
+      <section className="-mx-3.5 -mt-4 bg-night px-4 pb-5 pt-4 text-white md:mx-0 md:mt-0 md:rounded-2xl md:px-6 md:pt-5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-white/60 first-letter:uppercase">{longDate}</p>
+        <h1 className="mt-1 font-display text-[26px] font-bold leading-tight tracking-tight">{hello}{first ? `, ${first}` : ""}.</h1>
+        <p className="mt-1 text-sm text-white/75">
+          {d.stats.matches_analysed} matchs analysés dans {d.stats.competitions} championnats, {d.stats.picks} pronostics retenus.
         </p>
-      </div>
-      <Freshness lastSync={d.last_sync} lastAnalysis={d.last_analysis} tz={tz} />
+        <div className="mt-4 grid grid-cols-3 gap-2">
+          <div className="rounded-xl bg-white/10 px-3 py-2.5">
+            <div className="text-[11px] text-white/65">Aujourd&apos;hui</div>
+            <div className="font-display text-xl font-bold">{d.stats.matches_today}</div>
+            <div className="text-[11px] text-white/65">matchs</div>
+          </div>
+          <div className="rounded-xl bg-white/10 px-3 py-2.5">
+            <div className="text-[11px] text-white/65">Réussite</div>
+            <div className="font-display text-xl font-bold">{settled ? pct(d.stats.history_hit_rate) : "—"}</div>
+            <div className="text-[11px] text-white/65">{settled ? `${settled} réglés` : "en attente"}</div>
+          </div>
+          <div className="rounded-xl bg-white/10 px-3 py-2.5">
+            <div className="text-[11px] text-white/65">En direct</div>
+            <div className="flex items-center gap-1.5 font-display text-xl font-bold">
+              {live.length > 0 && <span className="h-2 w-2 animate-pulse rounded-full bg-brick" aria-hidden />}{live.length}
+            </div>
+            <div className="text-[11px] text-white/65">matchs</div>
+          </div>
+        </div>
+        {tiers?.A && (
+          <p className="mt-3 text-[11px] leading-relaxed text-white/60">
+            Fiabilité mesurée sur {new Intl.NumberFormat("fr-FR").format(tiers.A.n)} pronostics de niveau A testés : {pct(tiers.A.mean_predicted)} annoncé,{" "}
+            {pct(tiers.A.observed_frequency)} observé.
+          </p>
+        )}
+      </section>
 
-      <div className="mt-4 grid grid-cols-2 gap-2.5 md:grid-cols-4">
-        <Stat label="Matchs du jour" value={d.stats.matches_today} hint={`${d.stats.competitions} championnats suivis`} />
-        <Stat label="Pronostics retenus" value={d.stats.picks} hint={`${d.stats.insufficient} matchs écartés faute de données`} />
-        <Stat
-          label="Taux de réussite"
-          value={d.stats.history_settled ? pct(d.stats.history_hit_rate) : "—"}
-          hint={d.stats.history_settled ? `${d.stats.history_settled} pronostics réglés` : "Aucun pronostic encore réglé"}
-        />
-        <Stat label="ROI théorique" value={d.stats.history_roi !== null ? signedPct(d.stats.history_roi) : "—"} hint="Mise fixe, pronostics avec cote" />
-      </div>
+      <nav className="mt-4 grid grid-cols-4 gap-2" aria-label="Accès rapides">
+        {[
+          { href: "/pronostics?best=1", label: "Meilleurs pronos", icon: "M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z", tone: "bg-pitch-soft text-pitch-deep" },
+          { href: "/jouer", label: "Jouer", icon: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.5l3.8 2.8-1.5 4.4H9.7l-1.5-4.4z", tone: "bg-sky-soft text-sky" },
+          { href: "/assistant", label: "Assistant IA", icon: "M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z", tone: "bg-night text-white" },
+          { href: "/combines", label: "Combinés", icon: "M4 7h16M4 12h16M4 17h10", tone: "bg-amber-soft text-amber" },
+        ].map((a) => (
+          <Link key={a.href} href={a.href} className="flex flex-col items-center gap-1.5 rounded-xl border border-line bg-white px-1 py-3 text-center">
+            <span className={`flex h-10 w-10 items-center justify-center rounded-full ${a.tone}`}>
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={a.icon} /></svg>
+            </span>
+            <span className="text-[12px] font-semibold leading-tight text-night">{a.label}</span>
+          </Link>
+        ))}
+      </nav>
+
+      <div className="mt-3"><Freshness lastSync={d.last_sync} lastAnalysis={d.last_analysis} tz={tz} /></div>
+
+      {live.length > 0 && (
+        <Section title="En direct maintenant" action={<MoreLink href="/direct">Tout le direct</MoreLink>}>
+          <div className="-mx-3.5 flex gap-2.5 overflow-x-auto px-3.5 pb-1 [scrollbar-width:none] md:mx-0 md:px-0">
+            {live.slice(0, 12).map((x) => (
+              <Link key={x.match.id} href={`/matchs/${x.match.id}`} className="w-[220px] shrink-0 rounded-xl border border-line bg-white p-3">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="truncate text-steel">{x.match.competition.name}</span>
+                  <span className="flex shrink-0 items-center gap-1 font-bold text-brick"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-brick" aria-hidden />{x.live?.minute ? `${x.live.minute}'`.replace("''", "'") : "Direct"}</span>
+                </div>
+                <div className="mt-1.5 grid grid-cols-[minmax(0,1fr)_auto] gap-x-2 text-sm">
+                  <span className="truncate font-semibold">{x.match.home.name}</span><strong className="tabular-nums">{x.live?.home ?? "–"}</strong>
+                  <span className="truncate font-semibold">{x.match.away.name}</span><strong className="tabular-nums">{x.live?.away ?? "–"}</strong>
+                </div>
+                {x.picks && x.picks.length > 0 && <div className="mt-1.5 truncate text-[11px] font-semibold text-pitch-deep">{x.picks.length} pronostic{x.picks.length > 1 ? "s" : ""} SAM en jeu</div>}
+              </Link>
+            ))}
+          </div>
+        </Section>
+      )}
 
       <Section
         title="Sélection SAM du jour"
@@ -100,14 +161,20 @@ export default async function Home() {
         )}
       </Section>
 
-      <Link href="/assistant" className="mt-7 flex items-center justify-between gap-3 rounded-2xl bg-night px-4 py-4 text-white">
-        <span className="min-w-0">
-          <span className="block text-[11px] font-bold uppercase tracking-wide text-white/60">Nouveau</span>
-          <span className="block font-display text-lg font-bold leading-tight">Assistant IA</span>
-          <span className="mt-0.5 block text-xs text-white/75">« Propose-moi le combiné le plus sûr pour une cote 2 », « Analyse tous les marchés de ce soir »…</span>
-        </span>
-        <span className="shrink-0 rounded-lg bg-pitch px-3 py-2 text-sm font-bold">Demander</span>
-      </Link>
+      <Section title="Combiné cote 2 du jour" action={<MoreLink href="/combines">Autre cote</MoreLink>}>
+        <p className="-mt-1 mb-3 px-1 text-sm text-steel">
+          2 ou 3 matchs au lieu de 8 à 10 : la même cote avec moins de risques de surprise. Matchs des 36 prochaines heures.
+        </p>
+        {d.combo_of_day.length ? (
+          <div className="grid gap-3 md:grid-cols-2">
+            {d.combo_of_day.map((c, i) => (
+              <ComboView key={i} c={c} tz={tz} title={i === 0 ? `Combiné principal : ${c.n_legs} matchs` : `Alternative : ${c.n_legs} matchs`} />
+            ))}
+          </div>
+        ) : (
+          <Empty title="Pas de combinaison assez solide pour atteindre une cote de 2 en ce moment" />
+        )}
+      </Section>
 
       <Section title="Pronostics à cote" action={<MoreLink href="/historique?cote=1">Bilan</MoreLink>}>
         <p className="-mt-1 mb-3 px-1 text-sm text-steel">
@@ -129,22 +196,8 @@ export default async function Home() {
         )}
       </Section>
 
-      <Section title="Combiné cote 2 du jour" action={<MoreLink href="/combines">Autre cote</MoreLink>}>
-        <p className="-mt-1 mb-3 px-1 text-sm text-steel">
-          2 ou 3 matchs au lieu de 8 à 10 : la même cote avec moins de risques de surprise. Matchs des 36 prochaines heures.
-        </p>
-        {d.combo_of_day.length ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {d.combo_of_day.map((c, i) => (
-              <ComboView key={i} c={c} tz={tz} title={i === 0 ? `Combiné principal : ${c.n_legs} matchs` : `Alternative : ${c.n_legs} matchs`} />
-            ))}
-          </div>
-        ) : (
-          <Empty title="Pas de combinaison assez solide pour atteindre une cote de 2 en ce moment" />
-        )}
-      </Section>
 
-      <Section title="Résultats récents" action={<MoreLink href="/direct">En direct</MoreLink>}>
+      <Section title="Derniers résultats vérifiés" action={<MoreLink href="/historique">Bilan complet</MoreLink>}>
         {recent.ok && (recent.data.waiting.length || recent.data.settled.length) ? (
           <List>
             {[...recent.data.waiting, ...recent.data.settled].slice(0, 10).map((h) => (
@@ -195,40 +248,8 @@ export default async function Home() {
           )}
         </Section>
 
-        <Section title="Classés par probabilité" action={<MoreLink href="/pronostics?sort=probability">Filtrer</MoreLink>}>
-          {d.by_probability.length ? (
-            <List>
-              {d.by_probability.slice(0, 6).map((p) => (
-                <CompactPick key={`${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} />
-              ))}
-            </List>
-          ) : (
-            <Empty title="Aucun pronostic disponible" />
-          )}
-        </Section>
       </div>
 
-      <Section title="Marchés les plus intéressants">
-        {d.markets.length ? (
-          <List>
-            {d.markets.map((m) => (
-              <Link key={m.key} href={`/pronostics?market=${encodeURIComponent(m.key)}&all=1`} className="block px-4 py-3">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-sm font-semibold text-night">{m.label}</span>
-                  <span className="text-xs text-steel">
-                    {m.count} sélection{m.count > 1 ? "s" : ""}, moyenne {pct(m.avg_probability)}
-                  </span>
-                </div>
-                <div className="mt-1.5">
-                  <ProbBar p={m.avg_probability} thresholds={th} size="sm" />
-                </div>
-              </Link>
-            ))}
-          </List>
-        ) : (
-          <Empty title="Rien à signaler pour le moment" />
-        )}
-      </Section>
 
       <div className="grid gap-x-6 md:grid-cols-2">
         <Section title="Matchs du jour">
@@ -278,22 +299,6 @@ export default async function Home() {
         </Section>
       </div>
 
-      <Section title="Dernières analyses">
-        {d.latest_analyses.length ? (
-          <List>
-            {d.latest_analyses.map((a) => (
-              <MatchRow
-                key={a.match.id}
-                match={a.match}
-                tz={tz}
-                right={<span className="shrink-0 text-[11px] text-steel">{dateTime(a.computed_at, tz)}</span>}
-              />
-            ))}
-          </List>
-        ) : (
-          <Empty title="Aucune analyse effectuée" />
-        )}
-      </Section>
     </>
   );
 }

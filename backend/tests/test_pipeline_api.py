@@ -497,6 +497,17 @@ def test_jouer_virtual_bets(populated, monkeypatch):
         assert c.post("/api/jeu/paris", json={"selections": dup, "stake": 50, "mode": "combine"}, headers=h).status_code == 422
         r2 = c.post("/api/jeu/paris", json={"selections": sel, "stake": 50, "mode": "simple"}, headers=h).json()
         assert len(r2["bets"]) == 2 and r2["wallet"]["balance"] == before - 200
+        # Marchés étendus : présents dans la fiche, pariables, probabilité du combiné calculée
+        xg = [g for g in mk["groups"] if g.get("extended")]
+        assert xg and any(r["key"] == "e:CS1-1" for g in xg for r in g["markets"])
+        xsel = [{"match_id": m1, "market_key": "e:1&BY"}, {"match_id": m2, "market_key": "e:TEVEN"}]
+        qx = c.post("/api/jeu/devis", json={"selections": xsel, "stake": 10}, headers=h).json()
+        assert not qx["errors"] and qx["sam_probability"] and "et les deux marquent" in qx["legs"][0]["label"]
+        r3 = c.post("/api/jeu/paris", json={"selections": xsel, "stake": 10, "mode": "combine"}, headers=h).json()
+        assert r3["bets"][0]["legs"][0]["odds_source"] == "sam"
+        before -= 10
+        live = c.get("/api/jeu/mes-paris", headers=h).json()["bets"][0]["legs"][0]["live"]
+        assert live["state"] == "scheduled"
 
     # Règlement : la journée se joue, résultats réels remis en place.
     with SessionLocal() as db:
@@ -506,8 +517,24 @@ def test_jouer_virtual_bets(populated, monkeypatch):
         db.commit()
         res = game.settle_bets(db, NOW + timedelta(days=5))
         bets = db.scalars(select(Bet).where(Bet.member_id == "joueur-1")).all()
-        assert all(x.status != "pending" for x in bets) and sum(res.values()) == 3
+        assert all(x.status != "pending" for x in bets) and sum(res.values()) == 4
         w = db.get(Wallet, "joueur-1")
         assert w.balance == before - 200 + sum(x.payout for x in bets)
         rk = game.ranking(db, "joueur-1", NOW + timedelta(days=5))
         assert rk["me"] and rk["me"]["name"] == "Awa"
+
+
+def test_extended_markets_engine():
+    from app.engine import extended as x
+    from app.engine.markets import score_matrix
+    keys = [m.key for m in x.CATALOG]
+    assert len(keys) == len(set(keys)) and max(map(len, keys)) <= 16 and len(keys) > 200
+    rows = {r["key"]: r for r in x.compute(score_matrix(1.6, 1.1, -0.05), 1.6, 1.1, (0.7, 0.5))}
+    assert abs(sum(rows[f"e:HF{a}/{b}"]["probability"] for a in "1X2" for b in "1X2") - 1) < 1e-3
+    assert abs(rows["e:TEVEN"]["probability"] + rows["e:TODD"]["probability"] - 1) < 1e-3
+    assert rows["e:AH1-1"]["void_probability"] > 0  # ligne entière : remboursement possible
+    assert "e:HF1/1" not in {r["key"] for r in x.compute(score_matrix(1.6, 1.1), 1.6, 1.1, None)}  # sans mi-temps
+    assert x.settle("e:AH1-1", 2, 1, 1, 0) == "void" and x.settle("e:AH1-0.5", 2, 1, 1, 0) == "won"
+    assert x.settle("e:HF1/2", 1, 2, 1, 0) == "won" and x.settle("e:HF1/2", 1, 2, None, None) is None
+    assert x.settle("e:1&BY", 2, 1, 0, 0) == "won" and x.settle("e:CS2-1", 2, 1, 0, 0) == "won"
+    assert x.settle("e:W1NIL", 1, 0, 0, 0) == "won" and x.settle("e:HM2", 1, 3, 1, 0) == "won"

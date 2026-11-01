@@ -3,7 +3,7 @@ import Link from "next/link";
 import { num, pct } from "@/lib/format";
 import { useCoupon, type CouponSel } from "@/lib/coupon";
 
-export type OddsRow = { key: string; label: string; short: string; family: string; odds: number; odds_source: "bookmaker" | "sam"; probability: number; confidence: number; is_pick: boolean };
+export type OddsRow = { key: string; label: string; short: string; family: string; odds: number; odds_source: "bookmaker" | "sam"; probability: number; confidence: number | null; is_pick: boolean; extended?: boolean };
 export type Wallet = { balance: number; name: string; pending: number; daily_bonus: number; settled: number; won: number; hit_rate: number | null; profit: number };
 
 export function fmtJetons(n: number) {
@@ -42,7 +42,7 @@ export function OddsButton({ row, matchId, matchLabel, label, showProb = false, 
         on ? "border-2 border-pitch bg-pitch-soft" : "border-line bg-mist"}`}>
       {showProb ? (
         <>
-          <span className="max-w-full truncate text-[11px] text-steel">{label ?? row.short}</span>
+          {label !== " " && <span className="max-w-full truncate text-[11px] text-steel">{label ?? row.short}</span>}
           <strong className="text-[15px] tabular-nums">{num(row.odds)}{row.odds_source === "sam" ? <sup className="ml-0.5 text-[9px] font-semibold text-steel">S</sup> : null}</strong>
           <span className={`text-[10.5px] font-semibold ${row.is_pick ? "text-pitch-deep" : "text-steel"}`}>SAM {pct(row.probability)}</span>
         </>

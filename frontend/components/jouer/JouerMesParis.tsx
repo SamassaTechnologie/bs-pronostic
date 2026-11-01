@@ -3,8 +3,9 @@ import { useCallback, useEffect, useState } from "react";
 import { kickoffLabel, num, pct } from "@/lib/format";
 import { fmtJetons, JouerHeader, Legend, type Wallet } from "./JouerUi";
 
-type BetLeg = { match_id: number; match: string; kickoff: string; status: string; score: string | null; label: string; odds: number; odds_source: string; probability: number | null; result: string };
-type Bet = { id: number; kind: string; stake: number; total_odds: number; potential: number; status: string; payout: number; sam_probability: number | null; created_at: string; legs: BetLeg[] };
+type LegLive = { state: string; home?: number | null; away?: number | null; ht_home?: number | null; ht_away?: number | null; minute?: string | null; minute_estimated?: boolean; label?: string; covered?: boolean; winning_now?: boolean | null };
+type BetLeg = { match_id: number; match: string; competition: string; kickoff: string; status: string; score: string | null; label: string; odds: number; odds_source: string; probability: number | null; result: string; live?: LegLive };
+type Bet = { id: number; kind: string; stake: number; total_odds: number; potential: number; status: string; payout: number; sam_probability: number | null; created_at: string; legs: BetLeg[]; progress: { won: number; lost: number; pending: number; total: number } };
 type Rank = { position: number; name: string; profit: number; bets: number; me: boolean };
 type Data = { wallet: Wallet; bets: Bet[]; ranking: { month: string; top: Rank[]; me: Rank | null; players: number } };
 
@@ -12,7 +13,36 @@ const STATUS: Record<string, [string, string]> = {
   pending: ["En cours", "bg-amber-soft text-amber"], won: ["Gagné", "bg-pitch-soft text-pitch-deep"],
   lost: ["Perdu", "bg-brick-soft text-brick"], void: ["Remboursé", "bg-mist text-steel"],
 };
-const LEG: Record<string, string> = { won: "text-pitch-deep", lost: "text-brick", void: "text-steel", pending: "text-steel" };
+function ResultIcon({ r }: { r: string }) {
+  if (r === "won") return <span className="flex h-6 w-6 items-center justify-center rounded-full bg-pitch text-white" aria-label="Gagnée"><svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden><path d="M5 12l5 5 9-10" /></svg></span>;
+  if (r === "lost") return <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brick text-white" aria-label="Perdue"><svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="3" aria-hidden><path d="M6 6l12 12M18 6L6 18" /></svg></span>;
+  if (r === "void") return <span className="flex h-6 w-6 items-center justify-center rounded-full bg-line text-[10px] font-bold text-steel" aria-label="Remboursée">R</span>;
+  return <span className="block h-6 w-6 shrink-0 rounded-full border-2 border-line" aria-label="En attente" />;
+}
+
+/** Ligne d'état du match d'une sélection, comme sur un coupon de bookmaker. */
+function LegState({ l, tz }: { l: BetLeg; tz: string }) {
+  const lv = l.live;
+  if (l.result !== "pending" || lv?.state === "finished") {
+    const sc = lv?.state === "finished" ? `${lv.home}-${lv.away}` : l.score;
+    return <span className="text-xs text-steel">Terminé{sc ? ` · ${sc}` : ""}{lv?.ht_home != null ? ` (mi-temps ${lv.ht_home}-${lv.ht_away})` : ""}</span>;
+  }
+  if (lv?.state === "live") {
+    return (
+      <span className="flex flex-wrap items-center gap-1.5 text-xs">
+        <span className="flex items-center gap-1 rounded bg-brick px-1.5 py-0.5 font-bold text-white">
+          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" aria-hidden />
+          {lv.label === "Mi-temps" ? "Mi-temps" : `En direct${lv.minute && lv.minute !== "Mi-temps" ? ` ${lv.minute_estimated ? "≈ " : ""}${lv.minute}` : ""}`}
+        </span>
+        {lv.home != null ? <strong className="text-sm tabular-nums text-night">{lv.home} - {lv.away}</strong> : <span className="text-steel">score non disponible</span>}
+        {lv.winning_now === true && <span className="rounded bg-pitch-soft px-1.5 py-0.5 font-semibold text-pitch-deep">Gagnante pour l&apos;instant</span>}
+        {lv.winning_now === false && <span className="rounded bg-brick-soft px-1.5 py-0.5 font-semibold text-brick">Perdante pour l&apos;instant</span>}
+      </span>
+    );
+  }
+  if (lv?.state === "postponed") return <span className="text-xs font-semibold text-amber">Match reporté</span>;
+  return <span className="text-xs text-steel">À venir · {kickoffLabel(l.kickoff, tz)}</span>;
+}
 
 export function JouerMesParis({ tz, justPlaced }: { tz: string; justPlaced: boolean }) {
   const [tab, setTab] = useState<"en-cours" | "termines" | "classement">("en-cours");
@@ -30,6 +60,12 @@ export function JouerMesParis({ tz, justPlaced }: { tz: string; justPlaced: bool
     }
   }, []);
   useEffect(() => { load(tab); }, [tab, load]);
+  const anyLive = Boolean(d?.bets.some((b) => b.legs.some((l) => l.live?.state === "live" || (l.result === "pending" && new Date(l.kickoff).getTime() < Date.now() + 10 * 60000))));
+  useEffect(() => {
+    if (!anyLive || tab !== "en-cours") return;
+    const t = setInterval(() => { if (document.visibilityState === "visible") load(tab); }, 60000);
+    return () => clearInterval(t);
+  }, [anyLive, tab, load]);
 
   const w = d?.wallet;
   const rk = d?.ranking;
@@ -79,18 +115,23 @@ export function JouerMesParis({ tz, justPlaced }: { tz: string; justPlaced: bool
             const [lab, cls] = STATUS[b.status] ?? [b.status, ""];
             return (
               <article key={b.id} className="rounded-xl border border-line bg-white p-3">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <span className="text-[13px] font-bold">{b.kind === "combine" ? `Combiné · ${b.legs.length} sélections` : "Simple"}</span>
-                  <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${cls}`}>{lab}</span>
+                  <span className="flex items-center gap-2">
+                    {b.kind === "combine" && b.status === "pending" && <span className="text-xs font-semibold text-steel">{b.progress.won}/{b.progress.total} validées</span>}
+                    <span className={`rounded-md px-2 py-0.5 text-xs font-bold ${cls}`}>{lab}</span>
+                  </span>
                 </div>
-                <ul className="mt-1.5 space-y-1">
+                <ul className="mt-2 divide-y divide-mist">
                   {b.legs.map((l) => (
-                    <li key={`${l.match_id}-${l.label}`} className="flex justify-between gap-2 text-sm">
-                      <span className="min-w-0">
-                        <span className="block truncate">{l.match}{l.score ? ` (${l.score})` : ""}</span>
-                        <span className="block truncate text-xs text-steel">{l.label} · {kickoffLabel(l.kickoff, tz)}</span>
+                    <li key={`${l.match_id}-${l.label}`} className="flex gap-2.5 py-2">
+                      <span className="shrink-0 pt-0.5"><ResultIcon r={l.result} /></span>
+                      <span className="min-w-0 flex-1">
+                        <a href={`/matchs/${l.match_id}`} className="block truncate text-sm font-semibold text-night">{l.match}</a>
+                        <span className="block truncate text-[13px]">{l.label}</span>
+                        <LegState l={l} tz={tz} />
                       </span>
-                      <span className={`shrink-0 text-right text-xs font-semibold ${LEG[l.result] ?? ""}`}>{num(l.odds)}<br />{l.result === "pending" ? "" : STATUS[l.result]?.[0]}</span>
+                      <strong className="shrink-0 text-sm tabular-nums">{num(l.odds)}</strong>
                     </li>
                   ))}
                 </ul>

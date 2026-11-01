@@ -175,6 +175,16 @@ Générer des secrets : `python -c "import secrets; print(secrets.token_urlsafe(
   Paris fermés au coup d'envoi, réglés avec les scores officiels en même temps que les pronostics. API `/api/jeu/*`
   (tables `wallets`, `bets`, `bet_legs`), appelée uniquement par le proxy Next.js (secret `ASSISTANT_TOKEN`, identité
   du membre ajoutée côté serveur).
+- **Marchés étendus** (`backend/app/engine/extended.py`, 249 issues, dans la fiche « Jouer » d'un match) : résultat +
+  les deux marquent / + total, victoire + total équipe, double chance + total équipe, « l'un ou l'autre », handicaps
+  européens et asiatiques (lignes entières remboursables), totaux 4,5/5,5, totaux asiatiques, total 3 issues, pair/impair,
+  0-0, multi-buts, totaux et buts exacts par équipe, victoire sans encaisser, écart, score exact, mi-temps/fin,
+  2e mi-temps, marque dans chaque mi-temps, gagne une/les deux mi-temps, mi-temps la plus prolifique, etc. Calculés
+  sur le modèle de buts (matrice Dixon-Coles, ou Poisson par mi-temps), non calibrés, cote SAM uniquement, réglés avec
+  les scores final et mi-temps. Non proposés faute de données fiables et gratuites : marchés liés à la chronologie des
+  buts (prochain but, minute, premier/dernier buteur d'équipe, équipe menée, durée de la marque, etc.).
+- **Mes paris** : état de chaque sélection (à venir, en direct avec score, minute et « gagnante pour l'instant »,
+  terminé avec le score), progression du combiné, actualisation chaque minute pendant les matchs.
 - Variables Vercel supplémentaires : `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 - Supabase → Authentication → URL Configuration : *Site URL* = l'adresse du site, *Redirect URLs* = `https://VOTRE-SITE/auth/callback`.
 
