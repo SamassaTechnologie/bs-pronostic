@@ -5,10 +5,10 @@ import { authEnabled } from "@/lib/supabase/env";
 
 export const maxDuration = 120;
 
-const MEMBERS_ONLY = [/^assistant$/, /^live$/, /^predictions$/, /^matches\/\d+$/, /^matches\/\d+\/ai$/, /^combos\//];
+const MEMBERS_ONLY = [/^jeu\//, /^assistant$/, /^live$/, /^predictions$/, /^matches\/\d+$/, /^matches\/\d+\/ai$/, /^combos\//];
 
-const GET_ALLOWED = [/^matches\/\d+\/(live|insights|ai)$/, /^search$/, /^competitions$/, /^competitions\/[A-Za-z0-9_-]+$/, /^teams\/\d+$/, /^live$/, /^recent-results$/, /^meta$/, /^predictions$/, /^matches(\/\d+)?$/, /^history$/, /^performance$/, /^calibration$/];
-const POST_ALLOWED = [/^combos\/generate$/, /^combos\/evaluate$/, /^combos\/target$/, /^assistant$/];
+const GET_ALLOWED = [/^jeu\/(board|mes-paris|matchs\/\d+)$/, /^matches\/\d+\/(live|insights|ai)$/, /^search$/, /^competitions$/, /^competitions\/[A-Za-z0-9_-]+$/, /^teams\/\d+$/, /^live$/, /^recent-results$/, /^meta$/, /^predictions$/, /^matches(\/\d+)?$/, /^history$/, /^performance$/, /^calibration$/];
+const POST_ALLOWED = [/^combos\/generate$/, /^combos\/evaluate$/, /^combos\/target$/, /^assistant$/, /^jeu\/(paris|devis)$/];
 
 async function forward(req: NextRequest, path: string[], method: "GET" | "POST") {
   const p = path.join("/");
@@ -22,6 +22,16 @@ async function forward(req: NextRequest, path: string[], method: "GET" | "POST")
   if (p === "assistant") {
     headers["X-Assistant-Token"] = process.env.ASSISTANT_TOKEN || "";
     if (member) headers["X-Member-Id"] = member.id;
+  }
+  if (p.startsWith("jeu/")) {
+    // Section Jouer : identité du membre ajoutée ici, côté serveur (jamais fournie par le navigateur).
+    headers["X-App-Token"] = process.env.ASSISTANT_TOKEN || "";
+    if (member) {
+      headers["X-Member-Id"] = member.id;
+      headers["X-Member-Name"] = encodeURIComponent(member.name || `Membre ${member.id.slice(0, 4).toUpperCase()}`);
+    } else if (!authEnabled) {
+      headers["X-Member-Id"] = "local-demo";
+    }
   }
   try {
     const res = await fetch(`${BACKEND_URL}/api/${p}${req.nextUrl.search}`, {

@@ -5,9 +5,11 @@ import { usePathname } from "next/navigation";
 const BASE = [
   { href: "/", label: "Accueil", icon: "M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z" },
   { href: "/pronostics", label: "Pronostics", icon: "M4 19h16M6 16V9m6 7V5m6 11v-4" },
+  { href: "/jouer", label: "Jouer", icon: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.5l3.8 2.8-1.5 4.4H9.7l-1.5-4.4zM12 3v4.5M20.6 9.6l-4.8.7M17.4 19.3l-3.1-4.6M6.6 19.3l3.1-4.6M3.4 9.6l4.8.7" },
   { href: "/direct", label: "Direct", icon: "M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4M4.9 4.9a10 10 0 0 0 0 14.2M19.1 4.9a10 10 0 0 1 0 14.2" },
   { href: "/ligues", label: "Ligues", icon: "M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3" },
 ];
+const LEAGUES_HREF = "/ligues";
 const RESULTS = { href: "/historique", label: "Résultats", icon: "M12 7v5l3 2M21 12a9 9 0 1 1-3-6.7M21 4v4h-4" };
 const ACCOUNT_ICON = "M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0";
 
@@ -42,7 +44,7 @@ export function DesktopNav({ signedIn }: { signedIn: boolean }) {
 
 export function MobileTabs({ signedIn }: { signedIn: boolean }) {
   const path = usePathname();
-  const LINKS = links(signedIn);
+  const LINKS = links(signedIn).filter((l) => l.href !== LEAGUES_HREF);
   return (
     <nav className="safe-bottom fixed inset-x-0 bottom-0 z-40 border-t border-line bg-white/95 backdrop-blur md:hidden" aria-label="Navigation">
       <ul className="mx-auto grid max-w-md grid-cols-5">

@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const MEMBERS_ONLY = ["/pronostics", "/matchs", "/combines", "/compte", "/direct", "/assistant"];
+const MEMBERS_ONLY = ["/pronostics", "/matchs", "/combines", "/compte", "/direct", "/assistant", "/jouer"];
 
 /** Rafraîchit la session Supabase et protège les pages réservées aux membres. */
 export async function proxy(request: NextRequest) {

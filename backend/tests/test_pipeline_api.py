@@ -453,3 +453,61 @@ def test_assistant_tools_and_checks(populated, client, monkeypatch):
     h = {"X-Assistant-Token": "secret", "X-Member-Id": "membre-test"}
     assert client.post("/api/assistant", json={"question": "Bonjour"}, headers=h).json()["status"] == "ok"
     assert client.post("/api/assistant", json={"question": "Bonjour"}, headers=h).json()["status"] == "quota"
+
+
+def test_jouer_virtual_bets(populated, monkeypatch):
+    """Section Jouer : portefeuille, cotes relues côté serveur, combiné, règlement, classement."""
+    from app.api import game as game_api
+    from app.models import Bet, Wallet
+    from app.services import game
+
+    # On rejoue la journée avant son coup d'envoi (les matchs sont terminés dans la base de test).
+    saved = {}
+    with SessionLocal() as db:
+        for m in db.scalars(select(Match).where(Match.kickoff > NOW)).unique().all():
+            saved[m.id] = (m.status, m.home_goals, m.away_goals)
+            m.status = "SCHEDULED"
+        db.commit()
+    with TestClient(app) as c:
+        monkeypatch.setattr(game_api, "_now", lambda: NOW)
+        h = {"X-Member-Id": "joueur-1", "X-Member-Name": "Awa"}
+        assert c.get("/api/jeu/board").status_code == 401  # membre requis
+        b = c.get("/api/jeu/board", params={"jour": "tout"}, headers=h).json()
+        assert b["wallet"]["balance"] in (game.START_BALANCE, game.START_BALANCE + game.DAILY_BONUS)
+        groups = b["groups"]
+        assert groups and groups[0]["matches"][0]["odds"]["1"]["odds"] > 1
+        m1 = groups[0]["matches"][0]["match"]["id"]
+        all_m = [x["match"]["id"] for g in groups for x in g["matches"]]
+        m2 = next(x for x in all_m if x != m1)
+        mk = c.get(f"/api/jeu/matchs/{m1}", headers=h).json()
+        assert mk["open"] and mk["groups"][0]["family"] == "result"
+        sam_odds = [r for g in mk["groups"] for r in g["markets"] if r["odds_source"] == "sam"]
+        assert sam_odds and all(r["odds"] < 1 / r["probability"] for r in sam_odds)  # marge appliquée
+
+        sel = [{"match_id": m1, "market_key": "1X"}, {"match_id": m2, "market_key": "O1.5"}]
+        q = c.post("/api/jeu/devis", json={"selections": sel, "stake": 100}, headers=h).json()
+        assert q["total_odds"] and q["sam_probability"] and not q["errors"]
+        before = c.get("/api/jeu/mes-paris", headers=h).json()["wallet"]["balance"]
+        r = c.post("/api/jeu/paris", json={"selections": sel, "stake": 100, "mode": "combine"}, headers=h).json()
+        assert r["wallet"]["balance"] == before - 100 and r["bets"][0]["total_odds"] == q["total_odds"]
+        # Solde insuffisant, mise hors bornes, même match deux fois dans un combiné
+        assert c.post("/api/jeu/paris", json={"selections": sel, "stake": 4999, "mode": "simple"}, headers=h).status_code == 422
+        assert c.post("/api/jeu/paris", json={"selections": sel, "stake": 5, "mode": "combine"}, headers=h).status_code == 422
+        dup = [{"match_id": m1, "market_key": "1X"}, {"match_id": m1, "market_key": "O1.5"}]
+        assert c.post("/api/jeu/paris", json={"selections": dup, "stake": 50, "mode": "combine"}, headers=h).status_code == 422
+        r2 = c.post("/api/jeu/paris", json={"selections": sel, "stake": 50, "mode": "simple"}, headers=h).json()
+        assert len(r2["bets"]) == 2 and r2["wallet"]["balance"] == before - 200
+
+    # Règlement : la journée se joue, résultats réels remis en place.
+    with SessionLocal() as db:
+        for mid, (status, hg, ag) in saved.items():
+            m = db.get(Match, mid)
+            m.status, m.home_goals, m.away_goals = status, hg, ag
+        db.commit()
+        res = game.settle_bets(db, NOW + timedelta(days=5))
+        bets = db.scalars(select(Bet).where(Bet.member_id == "joueur-1")).all()
+        assert all(x.status != "pending" for x in bets) and sum(res.values()) == 3
+        w = db.get(Wallet, "joueur-1")
+        assert w.balance == before - 200 + sum(x.payout for x in bets)
+        rk = game.ranking(db, "joueur-1", NOW + timedelta(days=5))
+        assert rk["me"] and rk["me"]["name"] == "Awa"

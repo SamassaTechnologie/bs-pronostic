@@ -246,3 +246,45 @@ class AiAnalysis(Base):
     model: Mapped[str] = mapped_column(String(80))
     content: Mapped[dict] = mapped_column(JSON)
     removed: Mapped[int] = mapped_column(Integer, default=0)  # phrases écartées (chiffres non vérifiables)
+
+
+class Wallet(Base):
+    """Portefeuille de jetons virtuels d'un membre (section « Jouer », aucun argent réel)."""
+
+    __tablename__ = "wallets"
+    member_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(60), default="Membre")
+    balance: Mapped[int] = mapped_column(Integer, default=1000)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    last_bonus: Mapped[Optional[str]] = mapped_column(String(10))  # jour du dernier bonus quotidien
+
+
+class Bet(Base):
+    __tablename__ = "bets"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    member_id: Mapped[str] = mapped_column(String(64), index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # simple | combine
+    stake: Mapped[int] = mapped_column(Integer)
+    total_odds: Mapped[float] = mapped_column(Float)
+    sam_probability: Mapped[Optional[float]] = mapped_column(Float)
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)  # pending|won|lost|void
+    payout: Mapped[int] = mapped_column(Integer, default=0)
+    settled_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime)
+
+    legs: Mapped[list["BetLeg"]] = relationship(lazy="selectin", cascade="all, delete-orphan", order_by="BetLeg.id")
+
+
+class BetLeg(Base):
+    __tablename__ = "bet_legs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    bet_id: Mapped[int] = mapped_column(ForeignKey("bets.id", ondelete="CASCADE"), index=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"), index=True)
+    market_key: Mapped[str] = mapped_column(String(16))
+    label: Mapped[str] = mapped_column(String(80))
+    odds: Mapped[float] = mapped_column(Float)
+    odds_source: Mapped[str] = mapped_column(String(10))  # bookmaker | sam
+    probability: Mapped[Optional[float]] = mapped_column(Float)
+    result: Mapped[str] = mapped_column(String(10), default="pending")
+
+    match: Mapped[Match] = relationship(lazy="joined")

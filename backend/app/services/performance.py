@@ -38,6 +38,10 @@ def settle_predictions(db: Session, now: Optional[datetime] = None) -> dict:
             p.settled_at = now
             counts["void"] += 1
     db.commit()
+    from .game import settle_bets  # paris en jetons du « Jouer », réglés avec les mêmes scores
+    bets = settle_bets(db, now)
+    if any(bets.values()):
+        counts["bets"] = sum(bets.values())
     return dict(counts)
 
 

@@ -167,6 +167,14 @@ Générer des secrets : `python -c "import secrets; print(secrets.token_urlsafe(
   est contrôlé contre les résultats des outils. `POST /api/assistant`, réservé aux membres via le proxy (secret
   partagé `ASSISTANT_TOKEN` sur Render et Vercel, identifiant du membre transmis côté serveur),
   25 questions par membre et par jour (`ASSISTANT_MEMBER_DAILY`), 5 appels d'outils au plus par question.
+- **Jouer** (`/jouer`, onglet du menu) : paris en **jetons virtuels**, sans argent réel (aucun dépôt, retrait ni gain
+  monétaire). 1 000 jetons à l'inscription, bonus de 50 par jour. Cotes : bookmaker quand elle est collectée, sinon
+  « cote SAM » = cote juste du moteur moins 6 %, signalée par un « S ». Écrans : matchs (Direct, Aujourd'hui, Demain,
+  3 jours ; cotes 1X2 et repère SAM), tous les marchés d'un match avec la probabilité SAM, coupon (simples ou combiné,
+  une sélection par match, cote et chance SAM relues côté serveur), mes paris et classement mensuel au bénéfice net.
+  Paris fermés au coup d'envoi, réglés avec les scores officiels en même temps que les pronostics. API `/api/jeu/*`
+  (tables `wallets`, `bets`, `bet_legs`), appelée uniquement par le proxy Next.js (secret `ASSISTANT_TOKEN`, identité
+  du membre ajoutée côté serveur).
 - Variables Vercel supplémentaires : `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 - Supabase → Authentication → URL Configuration : *Site URL* = l'adresse du site, *Redirect URLs* = `https://VOTRE-SITE/auth/callback`.
 
