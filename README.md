@@ -151,6 +151,14 @@ Générer des secrets : `python -c "import secrets; print(secrets.token_urlsafe(
   chance de passer. À cote égale, moins de sélections = moins de marge cumulée (cote 2 : environ 45 % de chances réelles
   avec 2 sélections à 1,41, environ 31 % avec 8 sélections à 1,10).
 - **Cron sans quota** : `POST /api/cron/analyze` (en-tête `X-Cron-Secret`) recalcule les analyses sans appeler les fournisseurs.
+- **Analyse IA** (onglet « IA » de la fiche match) : Google Gemini (`GEMINI_API_KEY`, modèle `GEMINI_MODEL`,
+  par défaut `gemini-3.1-flash-lite`, offre gratuite sans carte) et Groq en secours (`GROQ_API_KEY`). L'IA reçoit
+  uniquement le dossier SAM du match et renvoie un JSON structuré ; elle ne produit aucune probabilité (celles affichées
+  viennent du moteur). Chaque nombre écrit doit exister dans le dossier et chaque pourcentage dans un champ en
+  pourcentage, sinon nouvelle rédaction puis retrait des phrases fautives. Cache 12 h par match (`ai_analyses`),
+  quota `AI_DAILY_BUDGET` (200/jour), préparation automatique des matchs de la Sélection SAM et des pronostics à cote.
+  Administration : `GET /api/admin/ai/status`, `POST /api/admin/ai/test`, `DELETE /api/admin/ai/matches/{id}`.
+  Sans clé : « L'analyse IA n'est pas encore activée », jamais de texte simulé.
 - Variables Vercel supplémentaires : `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 - Supabase → Authentication → URL Configuration : *Site URL* = l'adresse du site, *Redirect URLs* = `https://VOTRE-SITE/auth/callback`.
 
