@@ -232,3 +232,17 @@ class ApiUsage(Base):
     provider: Mapped[str] = mapped_column(String(40), primary_key=True)
     day: Mapped[str] = mapped_column(String(10), primary_key=True)
     requests: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class AiAnalysis(Base):
+    """Analyse rédigée par une IA à partir du seul dossier de données SAM (mise en cache par match)."""
+
+    __tablename__ = "ai_analyses"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    match_id: Mapped[int] = mapped_column(ForeignKey("matches.id", ondelete="CASCADE"), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, index=True)
+    based_on: Mapped[Optional[datetime]] = mapped_column(UTCDateTime)  # date de l'analyse SAM utilisée
+    provider: Mapped[str] = mapped_column(String(32))
+    model: Mapped[str] = mapped_column(String(80))
+    content: Mapped[dict] = mapped_column(JSON)
+    removed: Mapped[int] = mapped_column(Integer, default=0)  # phrases écartées (chiffres non vérifiables)

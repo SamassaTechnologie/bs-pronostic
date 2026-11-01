@@ -316,3 +316,13 @@ def match_live(match_id: int, db: Session = Depends(get_db)):
     if m is None:
         raise HTTPException(404, "Match introuvable")
     return match_live_state(db, m)
+
+
+@router.get("/matches/{match_id}/ai")
+def match_ai(match_id: int, db: Session = Depends(get_db)):
+    """Analyse rédigée par IA à partir du seul dossier SAM (générée à la demande, puis mise en cache)."""
+    from ..services.ai_service import get_match_ai
+    res = get_match_ai(db, match_id)
+    if res["status"] == "not_found":
+        raise HTTPException(404, res["message"])
+    return res

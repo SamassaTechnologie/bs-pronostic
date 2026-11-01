@@ -207,6 +207,36 @@ def cron_run():
     return {"status": "started"}
 
 
+@router.get("/ai/status")
+def ai_status(db: Session = Depends(get_db)):
+    from ..services.ai_service import status
+    return status(db)
+
+
+@router.post("/ai/test")
+def ai_test(db: Session = Depends(get_db)):
+    """Appel réel et minimal à chaque fournisseur configuré (aucune réponse simulée)."""
+    from ..ai.providers import AIError, configured_providers
+    out = []
+    schema = {"type": "object", "properties": {"reponse": {"type": "string"}}, "required": ["reponse"]}
+    for p in configured_providers():
+        try:
+            r = p.generate_json("Tu réponds en français, en JSON.", "Réponds « ok » dans le champ reponse.", schema)
+            out.append({"provider": p.label, "model": p.model, "ok": True, "reply": str(r.get("reponse"))[:40]})
+        except AIError as exc:
+            out.append({"provider": p.label, "model": p.model, "ok": False, "error": str(exc)})
+    return {"results": out, "configured": bool(out)}
+
+
+@router.delete("/ai/matches/{match_id}")
+def ai_reset(match_id: int, db: Session = Depends(get_db)):
+    """Supprime l'analyse IA en cache d'un match (elle sera rédigée à nouveau à la prochaine consultation)."""
+    from ..models import AiAnalysis
+    n = db.query(AiAnalysis).filter(AiAnalysis.match_id == match_id).delete()
+    db.commit()
+    return {"deleted": n}
+
+
 @cron_router.post("/analyze")
 def cron_analyze():
     """Recalcule les analyses sans appeler les fournisseurs (aucun quota consommé)."""

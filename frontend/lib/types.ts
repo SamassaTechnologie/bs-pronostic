@@ -133,6 +133,7 @@ export type Meta = {
   };
   default_timezone: string;
   disclaimer: string;
+  ai?: { configured: boolean; provider: string | null; model: string | null };
 };
 
 export type GroupStat = {

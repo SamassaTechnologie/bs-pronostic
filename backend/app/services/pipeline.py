@@ -26,6 +26,15 @@ _lock = threading.Lock()
 _state = {"running": False, "step": None, "started_at": None, "last_result": None}
 
 
+def _start_ai() -> None:
+    """Analyses IA des matchs phares, en tâche de fond (n'allonge pas la synchronisation)."""
+    try:
+        from .ai_service import pregenerate_in_background
+        pregenerate_in_background()
+    except Exception:  # l'IA est un complément : jamais bloquante
+        log.exception("Lancement des analyses IA impossible")
+
+
 def pipeline_state() -> dict:
     return dict(_state)
 
@@ -49,6 +58,7 @@ def run_pipeline(db: Session, kinds=("history", "upcoming", "enrich"), force: bo
         result = {"status": "ok", "sync": sync, "analysis": analysis, "settled": settled,
                   "finished_at": utcnow().isoformat()}
         _state["last_result"] = result
+        _start_ai()
         return result
     except Exception as exc:
         log.exception("Échec de la chaîne de traitement")
@@ -68,6 +78,7 @@ def run_analysis_only(db: Session) -> dict:
         res = run_analysis(db)
         settled = settle_predictions(db)
         _state["last_result"] = {"status": "ok", "analysis": res, "settled": settled, "finished_at": utcnow().isoformat()}
+        _start_ai()
         return _state["last_result"]
     except Exception as exc:
         log.exception("Échec de l'analyse")

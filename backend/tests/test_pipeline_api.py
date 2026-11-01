@@ -337,3 +337,66 @@ def test_value_picks_and_target_combos(populated, client):
     best = target_combos(legs, 2.0, max_results=1)[0]
     assert {l["match_id"] for l in best["legs"]} == {0, 1} and best["all_bookmaker_odds"]
     assert short_equivalent(2.0)["leg_odds"] == 1.41 and naive_equivalent(2.0)["total_odds"] == 2.14
+
+
+def test_ai_analysis_grounded(populated, client, monkeypatch):
+    """L'IA est remplacée ici par une fausse réponse (test uniquement) pour vérifier les contrôles."""
+    from app.ai import providers
+    from app.ai.analyst import allowed_numbers, check_output, sanitize, unverified_numbers
+    from app.services import ai_service
+
+    mid = client.get("/api/predictions").json()["items"][0]["match"]["id"]
+    monkeypatch.setattr(ai_service, "utcnow", lambda: NOW)
+    # Sans clé : état « non configuré », jamais de texte simulé.
+    monkeypatch.setattr(ai_service, "configured_providers", lambda: [])
+    r = client.get(f"/api/matches/{mid}/ai").json()
+    assert r["status"] == "not_configured" and "analysis" not in r
+    assert client.get("/api/meta").json()["ai"]["configured"] is False
+
+    seen = []
+
+    class Fake(providers.AIProvider):
+        name, label = "fake", "Fausse IA"
+
+        def generate_json(self, system, user, schema):
+            seen.append(user)
+            ok = len(seen) > 1
+            return {
+                "titre": "Match équilibré", "resume": ("Le modèle reste prudent." if ok else
+                                                        "Le favori gagne 87 % de ses matchs. Le modèle reste prudent."),
+                "contexte": ["Classement serré.", "Forme récente correcte."],
+                "analyse_domicile": "Solide à domicile.", "analyse_exterieur": "Moins régulier.",
+                "confrontations": "Peu de confrontations.", "scenario": "Match fermé.",
+                "pronostic_principal": {"cle": "U3.5", "argument": "Peu de buts attendus."},
+                "alternatives": [{"cle": "ZZZ", "argument": "Inconnu."}],
+                "points_de_vigilance": ["Absences non disponibles."],
+            }
+    fake = Fake("faux-modele")
+    monkeypatch.setattr(ai_service, "configured_providers", lambda: [fake])
+    monkeypatch.setattr(ai_service, "call_with_fallback", lambda s, u, sc: (fake.generate_json(s, u, sc), fake))
+    r = client.get(f"/api/matches/{mid}/ai").json()
+    assert r["status"] == "ok", r
+    assert len(seen) == 2 and "refusée" in seen[1] and "87" in seen[1]  # deuxième essai avec la correction
+    a = r["analysis"]
+    assert "87" not in a["resume"] and a["alternatives"] == []  # marché inconnu écarté
+    pp = a["pronostic_principal"]
+    # La probabilité affichée est celle du moteur SAM, pas celle de l'IA.
+    with SessionLocal() as db:
+        from app.models import Analysis
+        payload = db.scalar(select(Analysis).where(Analysis.match_id == mid)).payload
+    assert pp["probability"] == next(m["probability"] for m in payload["markets"] if m["key"] == "U3.5")
+    # Cache : pas de nouvel appel.
+    assert client.get(f"/api/matches/{mid}/ai").json()["status"] == "ok" and len(seen) == 2
+
+    dossier = {"x": [64, 1.44, "Plus de 2,5 buts dans 8 des 10 derniers matchs"], "y_pct": 64, "conf": 91}
+    allowed = allowed_numbers(dossier)
+    assert unverified_numbers("64 % et cote 1,44, 8 des 10", allowed) == []
+    assert unverified_numbers("72 % de victoires", allowed) == ["72"]
+    from app.ai.analyst import allowed_percents
+    pc = allowed_percents(dossier)
+    assert unverified_numbers("64 % de chances", allowed, pc) == []
+    assert unverified_numbers("91 % de victoires", allowed, pc) == ["91 %"]  # 91 existe, mais pas en pourcentage
+    content, removed = sanitize({"resume": "Cote 1,44. Il gagne 72 % du temps.", "pronostic_principal": {"cle": "1"}},
+                                dossier, {"1"})
+    assert content["resume"] == "Cote 1,44." and removed == 1
+    assert check_output({}, dossier, {"1"})

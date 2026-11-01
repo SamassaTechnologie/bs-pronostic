@@ -3,9 +3,11 @@ import { BACKEND_URL } from "@/lib/api";
 import { currentMember } from "@/lib/supabase/server";
 import { authEnabled } from "@/lib/supabase/env";
 
-const MEMBERS_ONLY = [/^live$/, /^predictions$/, /^matches\/\d+$/, /^combos\//];
+export const maxDuration = 60;
 
-const GET_ALLOWED = [/^matches\/\d+\/(live|insights)$/, /^search$/, /^competitions$/, /^competitions\/[A-Za-z0-9_-]+$/, /^teams\/\d+$/, /^live$/, /^recent-results$/, /^meta$/, /^predictions$/, /^matches(\/\d+)?$/, /^history$/, /^performance$/, /^calibration$/];
+const MEMBERS_ONLY = [/^live$/, /^predictions$/, /^matches\/\d+$/, /^matches\/\d+\/ai$/, /^combos\//];
+
+const GET_ALLOWED = [/^matches\/\d+\/(live|insights|ai)$/, /^search$/, /^competitions$/, /^competitions\/[A-Za-z0-9_-]+$/, /^teams\/\d+$/, /^live$/, /^recent-results$/, /^meta$/, /^predictions$/, /^matches(\/\d+)?$/, /^history$/, /^performance$/, /^calibration$/];
 const POST_ALLOWED = [/^combos\/generate$/, /^combos\/evaluate$/, /^combos\/target$/];
 
 async function forward(req: NextRequest, path: string[], method: "GET" | "POST") {

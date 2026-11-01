@@ -36,6 +36,11 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 
 const fmt = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleString("fr-FR") : "jamais");
 
+type AiStatus = {
+  configured: boolean; provider: string | null; model: string | null; fallback: string | null;
+  used_today: number; daily_budget: number; cached: number; setup: { gemini: string; groq: string };
+};
+
 export function AdminPanel() {
   const [status, setStatus] = useState<Status | null>(null);
   const [settings, setSettings] = useState<Record<string, number | string[]> | null>(null);
@@ -44,6 +49,8 @@ export function AdminPanel() {
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [tests, setTests] = useState<Record<string, { ok: boolean; message: string }>>({});
   const [showAll, setShowAll] = useState(false);
+  const [ai, setAi] = useState<AiStatus | null>(null);
+  const [aiTest, setAiTest] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -51,6 +58,7 @@ export function AdminPanel() {
         api<Status>("status"), api<Record<string, number | string[]>>("settings"), api<Comp[]>("competitions"), api<Run[]>("sync-runs?limit=25"),
       ]);
       setStatus(s); setSettings(st); setComps(c); setRuns(r);
+      api<AiStatus>("ai/status").then(setAi).catch(() => setAi(null));
     } catch (e) {
       setNotice({ ok: false, text: e instanceof Error ? e.message : "Erreur" });
     }
@@ -110,6 +118,16 @@ export function AdminPanel() {
       setTests((t) => ({ ...t, [name]: r }));
     } catch (e) {
       setTests((t) => ({ ...t, [name]: { ok: false, message: e instanceof Error ? e.message : "Erreur" } }));
+    }
+  }
+
+  async function testAi() {
+    setAiTest("Test en cours…");
+    try {
+      const r = await api<{ configured: boolean; results: { provider: string; model: string; ok: boolean; error?: string }[] }>("ai/test", { method: "POST" });
+      setAiTest(r.configured ? r.results.map((x) => `${x.provider} (${x.model}) : ${x.ok ? "connexion réussie" : x.error}`).join(" · ") : "Aucune clé d'IA configurée");
+    } catch (e) {
+      setAiTest(e instanceof Error ? e.message : "Erreur");
     }
   }
 
@@ -187,6 +205,31 @@ export function AdminPanel() {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="mb-2 px-1 font-display text-lg font-bold">Analyse IA</h2>
+        <div className={`${box} p-4 text-sm`}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-semibold">{ai?.provider ? `${ai.provider} (${ai.model})` : "Google Gemini ou Groq"}</span>
+            <span className={`rounded-md px-2 py-0.5 text-xs font-semibold ${ai?.configured ? "bg-pitch-soft text-pitch-deep" : "bg-amber-soft text-amber"}`}>
+              {ai?.configured ? "Clé configurée" : "Clé manquante"}
+            </span>
+          </div>
+          {ai?.configured ? (
+            <p className="mt-1 text-xs text-steel">
+              Analyses rédigées aujourd&apos;hui : {ai.used_today} / {ai.daily_budget} ; en cache : {ai.cached}.
+              {ai.fallback ? ` Secours : ${ai.fallback}.` : ""}
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-steel">
+              Créez une clé gratuite sur <a className="text-sky underline" href={ai?.setup.gemini ?? "https://aistudio.google.com/apikey"} target="_blank" rel="noreferrer">Google AI Studio</a>{" "}
+              puis ajoutez-la dans la variable <code>GEMINI_API_KEY</code> du service Render (secours facultatif : <code>GROQ_API_KEY</code>).
+            </p>
+          )}
+          {aiTest && <p className="mt-1 text-xs font-semibold text-night">{aiTest}</p>}
+          <button onClick={testAi} className="mt-2 rounded-lg bg-mist px-3 py-1.5 text-xs font-bold">Tester l&apos;IA</button>
         </div>
       </section>
 

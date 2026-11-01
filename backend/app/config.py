@@ -33,6 +33,18 @@ class Settings(BaseSettings):
     http_timeout: float = 25.0
     http_user_agent: str = "SAM-Prediction/1.0 (+analyse statistique)"
 
+    # Analyse rédigée par IA (gratuite) : Google Gemini en priorité, Groq en secours. Clés côté serveur uniquement.
+    ai_provider: str = "auto"  # auto | gemini | groq | off
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-3.1-flash-lite"
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta"
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-120b"
+    groq_base_url: str = "https://api.groq.com/openai/v1"
+    ai_daily_budget: int = 200  # générations maximum par jour (toutes sources)
+    ai_cache_hours: int = 12  # une analyse IA reste valable 12 h avant le match
+    ai_timeout: float = 45.0
+
     # Planification
     enable_scheduler: bool = True
     sync_interval_minutes: int = 180

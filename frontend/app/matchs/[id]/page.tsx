@@ -4,6 +4,7 @@ import { backend, userTz } from "@/lib/api";
 import { dateTime, dayLabel, kickoffLabel, num, pct, RESULT_LABEL } from "@/lib/format";
 import type { Analysis, FormBlock, Market, Meta, MatchSummary } from "@/lib/types";
 import { Factors } from "@/components/PickCard";
+import { AiAnalysis } from "@/components/AiAnalysis";
 import { LiveHeader, type LiveState } from "@/components/LiveHeader";
 import { flag } from "@/lib/flags";
 import { Card, ConfidenceBadge, Empty, ErrorBox, OddsInfo, ProbBar, Section, TierBadge } from "@/components/ui";
@@ -146,7 +147,7 @@ function MarketRow({ m, picked, th }: { m: Market; picked: boolean; th?: number[
   );
 }
 
-const TABS: [string, string, string][] = [["apercu", "Aperçu", "Aperçu"], ["pronostics", "Pronostics", "Pronos"], ["tendances", "Tendances", "Tendances"], ["stats", "Stats", "Stats"], ["cotes", "Cotes", "Cotes"]];
+const TABS: [string, string, string][] = [["apercu", "Aperçu", "Aperçu"], ["ia", "Analyse IA", "IA"], ["pronostics", "Pronostics", "Pronos"], ["tendances", "Tendances", "Séries"], ["stats", "Stats", "Stats"], ["cotes", "Cotes", "Cotes"]];
 const RES_STYLE: Record<string, string> = { V: "bg-pitch text-white", N: "bg-line text-ink", D: "bg-brick text-white" };
 
 function TrendItem({ t }: { t: Trend }) {
@@ -253,10 +254,10 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
       </LiveHeader>
 
       <div className="sticky top-[calc(env(safe-area-inset-top)+60px)] z-20 -mx-3.5 mt-4 bg-mist/95 px-3.5 py-2 backdrop-blur md:static md:mx-0 md:px-0">
-        <div className="grid grid-cols-5 gap-0.5 rounded-lg bg-white p-1" role="tablist">
+        <div className="grid grid-cols-6 gap-0.5 rounded-lg bg-white p-1" role="tablist">
           {TABS.map(([k, l, short]) => (
             <Link key={k} href={`/matchs/${m.id}?onglet=${k}`} role="tab" aria-selected={tab === k} replace scroll={false}
-              className={`whitespace-nowrap rounded-md px-0.5 py-2 text-center text-[13px] font-bold sm:text-sm ${tab === k ? "bg-night text-white" : "text-steel"}`}>
+              className={`whitespace-nowrap rounded-md px-0.5 py-2 text-center text-[12.5px] font-bold sm:text-sm ${tab === k ? "bg-night text-white" : k === "ia" ? "text-pitch-deep" : "text-steel"}`}>
               <span className="sm:hidden">{short}</span><span className="hidden sm:inline">{l}</span>
             </Link>
           ))}
@@ -278,6 +279,16 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                 <div className="mt-4 rounded-xl border border-brick/30 bg-brick-soft p-4 text-sm text-brick">
                   <strong>Match à éviter.</strong> {a.avoid_reasons.join(". ")}.
                 </div>
+              )}
+              {meta.data?.ai?.configured && (
+                <Link href={`/matchs/${m.id}?onglet=ia`} replace scroll={false}
+                  className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-pitch/30 bg-pitch-soft/40 px-4 py-3">
+                  <span className="min-w-0">
+                    <span className="block text-sm font-bold text-night">Analyse IA du match</span>
+                    <span className="block text-xs text-steel">Contexte, scénario, pronostic argumenté et points de vigilance, rédigés à partir des données SAM.</span>
+                  </span>
+                  <span className="shrink-0 text-sm font-bold text-pitch-deep">Lire</span>
+                </Link>
               )}
               <Section title="Notre pronostic">
                 {main ? (
@@ -380,6 +391,12 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
             </Card>
           </Section>
         </>
+      )}
+
+      {tab === "ia" && (
+        a && a.status === "ok"
+          ? <AiAnalysis matchId={m.id} home={m.home.name} away={m.away.name} tz={tz} thresholds={th} />
+          : <div className="mt-4"><Empty title="Données insuffisantes : aucune analyse IA possible pour ce match" /></div>
       )}
 
       {tab === "pronostics" && (
