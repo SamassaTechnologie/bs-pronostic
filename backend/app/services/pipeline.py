@@ -51,6 +51,9 @@ def run_pipeline(db: Session, kinds=("history", "upcoming", "enrich"), force: bo
         sync.append({"provider": "football_data_org", "kind": "scores", "status": "ok" if scores.get("ok") else "error",
                      "items": scores.get("updated", 0), "message": scores.get("error") or
                      f"{scores.get('updated', 0)} résultat(s) final(aux) enregistré(s)"})
+        _state["step"] = "statistiques"
+        from .stats_completion import complete_stats
+        sync.extend(complete_stats(db))
         _state["step"] = "analyse"
         analysis = run_analysis(db)
         _state["step"] = "règlement"

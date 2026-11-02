@@ -552,3 +552,38 @@ def test_extended_markets_in_predictions(populated):
         preds = db.scalars(select(Prediction).where(Prediction.market_key.startswith("e:"))).all()
         assert all(not p.featured for p in preds)
         assert any(p.result in ("won", "lost") for p in preds) or not preds
+
+
+def test_stats_completion_sources(populated, monkeypatch):
+    """Corners/cartons/mi-temps complétés depuis footballdata.io et Sportmonks (réponses simulées en test)."""
+    from app.config import get_settings
+    from app.services import stats_completion as sc
+    with SessionLocal() as db:
+        m = db.scalars(select(Match).where(Match.status == "FINISHED").order_by(Match.kickoff.desc())).first()
+        m.home_corners = m.away_corners = m.home_yellow = m.away_yellow = None
+        home, away, when = m.home_team.name, m.away_team.name, m.kickoff
+        db.commit()
+        mid = m.id
+
+    class R:
+        status_code = 200
+
+        def __init__(self, data):
+            self._d = data
+
+        def json(self):
+            return self._d
+
+    def fake_get(url, params=None, headers=None, timeout=None):
+        assert headers and headers["Authorization"].startswith("Bearer ")
+        return R({"data": {"matches": [{"status": "complete", "match_date": when.strftime("%Y-%m-%d %H:%M:%S"),
+                                        "home_team": {"team_name": home}, "away_team": {"team_name": away},
+                                        "stats": {"corners": {"home": 6, "away": 3},
+                                                  "cards": {"yellow": {"home": 2, "away": 1}, "red": {"home": 0, "away": 1}}}}]}})
+    monkeypatch.setattr(sc.httpx, "get", fake_get)
+    monkeypatch.setattr(get_settings(), "footballdata_io_key", "fd_test")
+    monkeypatch.setattr(sc, "FDIO_LEAGUES", {"ENG1": 15})
+    with SessionLocal() as db:
+        res = sc.complete_stats(db, now=when + timedelta(days=1))
+        m = db.get(Match, mid)
+        assert res[0]["status"] == "ok" and (m.home_corners, m.away_corners, m.home_yellow, m.away_red) == (6, 3, 2, 1)

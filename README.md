@@ -196,6 +196,10 @@ Générer des secrets : `python -c "import secrets; print(secrets.token_urlsafe(
   (`app/services/market_layout.py`).
 - **Corners et cartons** : récupérés auprès d'API-Football dès la fin des matchs qui attendent ces chiffres pour être
   réglés (8 au plus par synchronisation) ; sinon via football-data.co.uk sous quelques jours. Le coupon l'indique.
+- **Statistiques rapides** (`app/services/stats_completion.py`, à chaque synchronisation) : footballdata.io
+  (`FOOTBALLDATA_IO_KEY`, gratuit 1 000 req/mois ; Premier League, LaLiga, C1, C3 ; plafond prudent 25/jour) et
+  Sportmonks (`SPORTMONKS_KEY`, gratuit ; Écosse, Danemark) complètent corners, cartons et score à la mi-temps des
+  matchs terminés auxquels il manque ces données (jamais d'écrasement), pour régler pronostics et paris plus tôt.
 - Variables Vercel supplémentaires : `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 - Supabase → Authentication → URL Configuration : *Site URL* = l'adresse du site, *Redirect URLs* = `https://VOTRE-SITE/auth/callback`.
 
