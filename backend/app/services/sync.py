@@ -364,8 +364,14 @@ def _af_fixtures(db: Session, af: ApiFootball, comps: list[Competition], now: da
         created, linked = 0, 0
         skipped: list[str] = []
         last = min(days_ahead, get_settings().api_football_max_days_ahead)
-        for d in range(-1, last + 1):
+        from ..models import Setting
+        row = db.get(Setting, "af_days")
+        fetched: dict = dict(row.value) if row and isinstance(row.value, dict) else {}
+        for d in range(0, last + 1):
             day = (now + timedelta(days=d)).date().isoformat()
+            prev = fetched.get(day)
+            if prev and datetime.fromisoformat(prev) > now - timedelta(hours=12):
+                continue  # petite dose : une date n'est redemandée qu'après 12 h
             try:
                 fixtures = af.fixtures_by_date(day)
             except ProviderError as exc:
@@ -386,11 +392,18 @@ def _af_fixtures(db: Session, af: ApiFootball, comps: list[Competition], now: da
                         created += 1
                 elif link_fixture(db, comp, rec):
                     linked += 1
+            fetched[day] = now.isoformat()
+            fetched = {k: v for k, v in fetched.items() if k >= (now - timedelta(days=3)).date().isoformat()}
+            row = db.get(Setting, "af_days")
+            if row is None:
+                db.add(Setting(key="af_days", value=fetched))
+            else:
+                row.value = dict(fetched)
             db.commit()
         msg = f"{created} matchs mis à jour, {linked} rattachés ({af.requests_made} requêtes)"
         if skipped:
             msg += f" ; dates non couvertes par le plan : {len(skipped)} — " + skipped[0]
-            if created + linked == 0 and len(skipped) == last + 2:
+            if created + linked == 0 and len(skipped) == last + 1:
                 raise ProviderError(msg)
         return created + linked, msg
 
@@ -423,10 +436,15 @@ def _af_enrich(db: Session, af: ApiFootball, now: datetime, max_fixtures: int) -
     """Blessures/suspensions et cotes multi-marchés pour les matchs des 48 prochaines heures."""
 
     def work(run: SyncRun) -> tuple[int, str]:
+        from ..models import Prediction
         ms = db.scalars(select(Match).where(
             Match.api_football_fixture_id.is_not(None), Match.status == "SCHEDULED",
-            Match.kickoff >= now, Match.kickoff <= now + timedelta(hours=48))
+            Match.kickoff >= now, Match.kickoff <= now + timedelta(hours=30))
             .order_by(Match.kickoff)).unique().all()
+        rank: dict[int, int] = {}
+        for p in db.scalars(select(Prediction).where(Prediction.match_id.in_([m.id for m in ms]))).unique() if ms else []:
+            rank[p.match_id] = max(rank.get(p.match_id, 0), 2 if (p.featured or p.value_pick) else 1)
+        ms = sorted(ms, key=lambda m: (-rank.get(m.id, 0), m.kickoff))  # Sélection SAM et pronostics d'abord
         todo = [m for m in ms if m.enriched_at is None or m.enriched_at < now - timedelta(hours=12)][:max_fixtures]
         n_inj, n_odds, done, errors = 0, 0, 0, []
         for m in todo:
@@ -576,7 +594,10 @@ def run_sync(db: Session, kinds: Iterable[str] = ("history", "upcoming", "enrich
             results.append(_fdcuk_upcoming(db, fd, fd_comps, now))
 
     used = _api_usage_today(db, "api_football")
-    af = ApiFootball(budget_check=lambda _: used + af.requests_made < cfg.api_football_daily_budget)
+    runs_per_day = max(1, (24 * 60) // max(30, cfg.sync_interval_minutes))
+    per_run = max(2, -(-cfg.api_football_daily_budget // runs_per_day) + 1)  # petite dose répartie sur la journée
+    cap = min(cfg.api_football_daily_budget, used + per_run)
+    af = ApiFootball(budget_check=lambda _: used + af.requests_made < cap)
     if af.is_configured() and flags["api_football"]:
         af_primary = [c for c in comps if c.primary_source == "api_football" and c.api_football_id]
         if "history" in kinds and af_primary:
@@ -584,13 +605,24 @@ def run_sync(db: Session, kinds: Iterable[str] = ("history", "upcoming", "enrich
         if "upcoming" in kinds and any(c.api_football_id for c in comps):
             results.append(_af_fixtures(db, af, comps, now, int(sel["days_ahead"])))
         if "enrich" in kinds:
-            remaining = cfg.api_football_daily_budget - used - af.requests_made
-            if remaining >= 2:
-                results.append(_af_match_stats(db, af, now, max_fixtures=min(8, remaining // 2)))
-            remaining = cfg.api_football_daily_budget - used - af.requests_made
+            remaining = cap - used - af.requests_made
+            if remaining >= 1:
+                results.append(_af_match_stats(db, af, now, max_fixtures=min(4, remaining)))
+            remaining = cap - used - af.requests_made
             if remaining >= 2:
                 results.append(_af_enrich(db, af, now, max_fixtures=min(6, remaining // 2)))
         _add_api_usage(db, af.name, af.requests_made)
+        warn = next((r for r in results if r.get("provider") == "api_football" and r.get("status") == "error"
+                     and any(w in (r.get("message") or "").lower()
+                             for w in ("suspend", "access", "rate", "too many", "limit", "http 403", "http 429", "http 499"))), None)
+        if warn:
+            # Coupure automatique au premier avertissement du fournisseur (compte, quota, cadence)
+            from .settings_service import set_provider_flag
+            set_provider_flag(db, "api_football", False)
+            log.warning("API-Football désactivé automatiquement : %s", warn.get("message"))
+            results.append({"provider": "api_football", "kind": "sécurité", "status": "error", "items": 0,
+                            "message": "Désactivé automatiquement après un avertissement d'API-Football : "
+                                       + (warn.get("message") or "")[:200]})
 
     fo = FootballDataOrg()
     fo_comps = [c for c in comps if c.primary_source == "football_data_org" and c.fdorg_code]

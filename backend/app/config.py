@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     football_data_co_uk_base_url: str = "https://www.football-data.co.uk"
     api_football_key: str = ""
     api_football_base_url: str = "https://v3.football.api-sports.io"
-    api_football_daily_budget: int = 75  # marge confortable sur les 100 requêtes/jour du plan gratuit
+    api_football_daily_budget: int = 20  # petite dose (IP partagée de Render) sur les 100 requêtes/jour du plan gratuit
     api_football_max_days_ahead: int = 1  # plan gratuit : hier, aujourd'hui, demain uniquement
     football_data_org_key: str = ""
     football_data_org_base_url: str = "https://api.football-data.org/v4"
