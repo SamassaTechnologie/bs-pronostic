@@ -50,6 +50,9 @@ def settle_predictions(db: Session, now: Optional[datetime] = None) -> dict:
     return dict(counts)
 
 
+ROI_MIN_SAMPLE = 30  # en dessous : « Données insuffisantes »
+
+
 def _group_stats(rows: list[Prediction]) -> dict:
     settled = [r for r in rows if r.result in ("won", "lost")]
     won = sum(1 for r in settled if r.result == "won")
@@ -63,7 +66,8 @@ def _group_stats(rows: list[Prediction]) -> dict:
         "avg_probability": round(avg_p, 4) if avg_p is not None else None,
         "gap": round(avg_p - won / n, 4) if n else None,  # probabilité annoncée − fréquence réelle
         "staked": len(with_odds), "profit": round(profit, 2),
-        "roi": round(profit / len(with_odds), 4) if with_odds else None,
+        # ROI publié seulement sur un échantillon suffisant de pronostics réglés avec une vraie cote de bookmaker
+        "roi": round(profit / len(with_odds), 4) if len(with_odds) >= ROI_MIN_SAMPLE else None,
     }
 
 

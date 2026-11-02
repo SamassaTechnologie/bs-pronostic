@@ -93,7 +93,7 @@ export default async function Historique({ searchParams }: { searchParams: Promi
         <Stat label="Pronostics publiés" value={o.total} hint={`${o.pending} en attente`} />
         <Stat label="Gagnés / perdus" value={`${o.won} / ${o.lost}`} hint={o.void || o.unverifiable ? `${o.void} annulés, ${o.unverifiable} non vérifiables` : undefined} />
         <Stat label="Taux de réussite" value={pct(o.hit_rate, 1)} hint={o.avg_probability !== null ? `Probabilité annoncée ${pct(o.avg_probability, 1)}` : undefined} />
-        <Stat label="Bénéfice théorique" value={o.staked ? `${o.profit > 0 ? "+" : ""}${num(o.profit, 1)} u` : "—"} hint={o.roi !== null ? `ROI ${signedPct(o.roi)} sur ${o.staked} mises` : "Aucune mise avec cote"} />
+        <Stat label="Bénéfice théorique" value={o.staked ? `${o.profit > 0 ? "+" : ""}${num(o.profit, 1)} u` : "—"} hint={o.roi !== null ? `ROI ${signedPct(o.roi)} sur ${o.staked} mises` : o.staked ? `ROI : données insuffisantes (${o.staked} mise${o.staked > 1 ? "s" : ""} avec cote, 30 nécessaires)` : "Aucune mise avec cote"} />
       </div>
 
       <Section title="Évolution">
