@@ -262,5 +262,8 @@ def live_board(db: Session, force: bool = False, tz_name: Optional[str] = None) 
             upcoming.append({"match": match_summary(m), "live": None, "covered": False,
                              "picks": _picks(by_match.get(m.id, []), m, None, False)})
     finished.reverse()
+    from ..popular import rank
+    for lst in (in_play, upcoming):  # grands championnats d'abord, puis l'heure
+        lst.sort(key=lambda x: (rank(x["match"]["competition"]["code"]), x["match"]["kickoff"]))
     return {"items": in_play, "live": in_play, "upcoming": upcoming, "finished": finished,
             "refreshed_at": refreshed, "error": error}

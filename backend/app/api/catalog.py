@@ -32,7 +32,8 @@ def _fold(s: str) -> str:
 
 
 def comp_row(c: Competition) -> dict:
-    return {"id": c.id, "code": c.code, "name": c.name, "country": c.country}
+    from ..popular import is_popular
+    return {"id": c.id, "code": c.code, "name": c.name, "country": c.country, "popular": is_popular(c.code)}
 
 
 def _current_season(db: Session, comp_id: int) -> Optional[str]:
@@ -73,7 +74,8 @@ def competitions(db: Session = Depends(get_db)):
             Match.kickoff >= now, Match.kickoff < now + timedelta(days=3))).unique():
         picks[a.match.competition_id] += a.n_picks
     rows = [{**comp_row(c), "upcoming": upcoming.get(c.id, 0), "picks": picks.get(c.id, 0)} for c in comps]
-    rows.sort(key=lambda r: (r["country"], r["name"]))
+    from ..popular import rank
+    rows.sort(key=lambda r: (rank(r["code"]), r["country"], r["name"]))  # grands championnats d'abord
     return {"items": rows}
 
 

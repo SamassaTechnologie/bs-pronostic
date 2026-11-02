@@ -15,6 +15,7 @@ from ..engine.predictor import ENGINE_VERSION, EngineParams, FixtureContext, ana
 from ..engine.types import MatchData, OddsInfo
 from ..engine.extended_picks import add_to_payload as add_extended_markets
 from ..engine.value import best_value_per_match, value_score
+from ..popular import is_popular
 from ..models import Analysis, Calibration, Competition, Injury, Match, OddsQuote, Prediction, utcnow
 from .settings_service import get_selection_settings
 from .sync import last_successful_sync
@@ -43,7 +44,7 @@ def match_summary(m: Match) -> dict:
     return {
         "id": m.id, "kickoff": m.kickoff.isoformat(), "status": m.status, "season": m.season,
         "competition": {"id": m.competition.id, "code": m.competition.code, "name": m.competition.name,
-                        "country": m.competition.country},
+                        "country": m.competition.country, "popular": is_popular(m.competition.code)},
         "home": {"id": m.home_team.id, "name": m.home_team.name},
         "away": {"id": m.away_team.id, "name": m.away_team.name},
         "score": ({"home": m.home_goals, "away": m.away_goals, "ht_home": m.ht_home_goals,

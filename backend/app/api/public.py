@@ -331,6 +331,8 @@ def predictions(date_from: Optional[date] = None, date_to: Optional[date] = None
     if value_only:
         cards = [c for c in cards if c["value_pick"]]
     cards.sort(key=keyfn, reverse=True)
+    from ..popular import is_popular
+    cards.sort(key=lambda c: 0 if is_popular((c["match"].get("competition") or {}).get("code")) else 1)  # grands championnats d'abord (tri stable)
     return {"count": len(cards), "items": cards[:limit], "range": {"from": start.isoformat(), "to": end.isoformat()}}
 
 
@@ -344,6 +346,8 @@ def matches(day: Optional[date] = None, tz: Optional[str] = None, competition: O
     rows = db.scalars(q).unique().all()
     an = {a.match_id: a for a in db.scalars(select(Analysis).where(
         Analysis.match_id.in_([m.id for m in rows]))).unique()} if rows else {}
+    from ..popular import rank
+    rows = sorted(rows, key=lambda m: (rank(m.competition.code), m.kickoff))  # grands championnats d'abord
     out = []
     for m in rows:
         if not m.competition.enabled:

@@ -124,7 +124,8 @@ def board(db: Session, start: datetime, end: datetime, now: Optional[datetime] =
                     "probability": best["probability"]} if best else None,
             "avoid": bool(p.get("avoid_reasons")),
         })
-    return list(groups.values())
+    from ..popular import rank
+    return sorted(groups.values(), key=lambda g: rank(g["code"]))  # grands championnats d'abord
 
 
 def match_markets(db: Session, match_id: int, now: Optional[datetime] = None) -> dict:
