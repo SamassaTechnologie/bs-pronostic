@@ -254,3 +254,10 @@ Générer des secrets : `python -c "import secrets; print(secrets.token_urlsafe(
 - Migrations de schéma : `create_all` au démarrage ; passer à Alembic avant d'ajouter des colonnes en production.
 
 Sources de données : football-data.co.uk (usage selon les conditions du site), API-Football, football-data.org. Jeu de test réel : Premier League 2025-2026 via le dépôt MIT « Club-Football-Match-Data-2000-2025 ».
+
+### Grands championnats (mise en avant)
+`app/popular.py` : Ligue des champions, Premier League, LaLiga, Serie A, Bundesliga, Ligue 1, Ligue Europa, Ligue
+Conférence, Liga Portugal, Eredivisie, Ligue des champions CAF. Toujours en tête des listes (page Championnats,
+Jouer, Direct, matchs du jour, pronostics : tri stable, le tri choisi s'applique ensuite). Aucune influence sur les
+probabilités ni sur la Sélection SAM. Le ROI n'est publié qu'à partir de 30 pronostics réglés avec une vraie cote
+(`ROI_MIN_SAMPLE`), sinon « données insuffisantes ».
