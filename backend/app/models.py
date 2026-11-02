@@ -50,6 +50,7 @@ class Competition(Base):
     fdcuk_extra: Mapped[bool] = mapped_column(Boolean, default=False)
     api_football_id: Mapped[Optional[int]] = mapped_column(Integer)
     fdorg_code: Mapped[Optional[str]] = mapped_column(String(16))
+    allsports_id: Mapped[Optional[int]] = mapped_column(Integer)  # identifiant de ligue AllSportsAPI
     calendar_year: Mapped[bool] = mapped_column(Boolean, default=False)  # saison = année civile
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 

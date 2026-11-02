@@ -4,7 +4,8 @@ const FLAGS: Record<string, string> = {
   "Brésil": "🇧🇷", Argentine: "🇦🇷", Autriche: "🇦🇹", Chine: "🇨🇳", Danemark: "🇩🇰", Finlande: "🇫🇮",
   Irlande: "🇮🇪", Japon: "🇯🇵", Mexique: "🇲🇽", "Norvège": "🇳🇴", Pologne: "🇵🇱", Roumanie: "🇷🇴",
   "Suède": "🇸🇪", Suisse: "🇨🇭", "États-Unis": "🇺🇸", Afrique: "🌍", Mali: "🇲🇱", "Sénégal": "🇸🇳",
-  "Côte d'Ivoire": "🇨🇮", Maroc: "🇲🇦", "Égypte": "🇪🇬",
+  "Côte d'Ivoire": "🇨🇮", Maroc: "🇲🇦", "Égypte": "🇪🇬", "Algérie": "🇩🇿", Tunisie: "🇹🇳",
+  "Afrique du Sud": "🇿🇦", Nigeria: "🇳🇬", Ghana: "🇬🇭", Cameroun: "🇨🇲", "Guinée": "🇬🇳", "Burkina Faso": "🇧🇫",
 };
 
 export function flag(country: string | null | undefined): string {

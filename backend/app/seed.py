@@ -33,9 +33,27 @@ CUPS = [
     ("UCL", "Ligue des champions", "Europe", 2, "CL", "football_data_org"),
     ("UEL", "Ligue Europa", "Europe", 3, None, "api_football"),
     ("UECL", "Ligue Conférence", "Europe", 848, None, "api_football"),
-    ("CAF1", "Ligue des champions CAF", "Afrique", 12, None, "api_football"),
-    ("CAF2", "Coupe de la Confédération CAF", "Afrique", 20, None, "api_football"),
+    ("CAF1", "Ligue des champions CAF", "Afrique", 12, None, "allsports"),
+    ("CAF2", "Coupe de la Confédération CAF", "Afrique", 20, None, "allsports"),
 ]
+# Championnats africains (source AllSportsAPI) : code, nom, pays, id de ligue AllSportsAPI,
+# id API-Football (à renseigner dans l'administration si besoin), activé
+AFRICA = [
+    ("MLI1", "Première Division", "Mali", 558, None, True),
+    ("SEN1", "Ligue 1", "Sénégal", 497, None, True),
+    ("CIV1", "Ligue 1", "Côte d'Ivoire", 123, None, True),
+    ("MAR1", "Botola Pro", "Maroc", 239, None, True),
+    ("ALG1", "Ligue 1", "Algérie", 34, None, True),
+    ("TUN1", "Ligue 1", "Tunisie", 317, None, True),
+    ("EGY1", "Premier League", "Égypte", 141, None, True),
+    ("RSA1", "Premiership", "Afrique du Sud", 297, None, True),
+    ("NGA1", "NPFL", "Nigeria", 248, None, False),
+    ("GHA1", "Premier League", "Ghana", 177, None, False),
+    ("CMR1", "Elite One", "Cameroun", 112, None, False),
+    ("GUI1", "Ligue 1", "Guinée", 553, None, False),
+    ("BFA1", "Ligue 1", "Burkina Faso", 554, None, False),
+]
+CUP_ALLSPORTS = {"CAF1": 346, "CAF2": 390}
 
 
 def seed_reference_data(db: Session) -> None:
@@ -56,11 +74,22 @@ def seed_reference_data(db: Session) -> None:
     for code, name, country, af, fo, primary in CUPS:
         if code in existing:
             continue
-        db.add(Competition(code=code, name=name, country=country, enabled=False, api_football_id=af,
-                           fdorg_code=fo, primary_source=primary))
+        db.add(Competition(code=code, name=name, country=country, enabled=primary == "allsports", api_football_id=af,
+                           fdorg_code=fo, primary_source=primary, allsports_id=CUP_ALLSPORTS.get(code)))
+    for code, name, country, as_id, af, enabled in AFRICA:
+        if code in existing:
+            continue
+        db.add(Competition(code=code, name=name, country=country, enabled=enabled, allsports_id=as_id,
+                           api_football_id=af, primary_source="allsports"))
+    # Coupes CAF déjà créées : AllSportsAPI devient leur source (API-Football indisponible), une seule fois.
+    for c in db.scalars(select(Competition).where(Competition.code.in_(list(CUP_ALLSPORTS)))).all():
+        if c.allsports_id is None:
+            c.allsports_id = CUP_ALLSPORTS[c.code]
+            c.primary_source = "allsports"
+            c.enabled = True
     if db.get(Setting, "selection") is None:
         db.add(Setting(key="selection", value=dict(DEFAULT_SETTINGS)))
     if db.get(Setting, "providers") is None:
         db.add(Setting(key="providers", value={"football_data_co_uk": True, "api_football": True,
-                                                "football_data_org": True}))
+                                                "football_data_org": True, "allsports": True}))
     db.commit()

@@ -57,14 +57,37 @@ def _find_match(db: Session, comps: dict, m: dict) -> Optional[Match]:
 
 
 def refresh_scores(db: Session, now: Optional[datetime] = None, days_back: int = 2) -> dict:
-    """Interroge football-data.org et met à jour les matchs terminés. Retourne les matchs en cours."""
+    """Scores du jour : football-data.org pour ses compétitions, AllSportsAPI pour les autres (championnats
+    africains, Turquie, Belgique…). Met à jour les matchs terminés et retourne les matchs en cours."""
+    from .allsports_sync import live_scores
     now = now or utcnow()
+    res = _refresh_fdorg(db, now, days_back)
+    fo_ok = res.get("ok") and res.get("error") is None
+    skip = set(res.pop("comp_ids", [])) if fo_ok else set()
+    extra = live_scores(db, now, skip)
+    seen = {x["match_id"] for x in res.get("live", [])}
+    res["live"] = res.get("live", []) + [x for x in extra["live"] if x["match_id"] not in seen]
+    res["updated"] = res.get("updated", 0) + extra["updated"]
+    if extra["updated"]:
+        from .performance import settle_predictions
+        settle_predictions(db, now)
+    if extra["ok"]:
+        res["ok"] = True
+        if not fo_ok:
+            res["error"] = None
+    res.pop("comp_ids", None)
+    return res
+
+
+def _refresh_fdorg(db: Session, now: datetime, days_back: int = 2) -> dict:
+    """Interroge football-data.org et met à jour les matchs terminés. Retourne les matchs en cours."""
     fo = FootballDataOrg()
     if not fo.is_configured() or not get_provider_flags(db).get("football_data_org", True):
         return {"ok": False, "error": "football-data.org non configuré", "live": [], "updated": 0}
     comps: dict[str, list[int]] = {}
     for c in db.scalars(select(Competition).where(Competition.enabled.is_(True), Competition.fdorg_code.is_not(None))):
         comps.setdefault(c.fdorg_code, []).append(c.id)
+    comp_ids = [i for ids in comps.values() for i in ids]
     if not comps:
         return {"ok": True, "live": [], "updated": 0}
     try:
@@ -72,7 +95,7 @@ def refresh_scores(db: Session, now: Optional[datetime] = None, days_back: int =
         rows = fo.matches_between((now - timedelta(days=days_back)).date().isoformat(),
                                   (now + timedelta(days=1)).date().isoformat())
     except ProviderError as exc:
-        return {"ok": False, "error": str(exc), "live": [], "updated": 0}
+        return {"ok": False, "error": str(exc), "live": [], "updated": 0, "comp_ids": comp_ids}
     updated, live = 0, []
     for r in rows:
         status = r.get("status")
@@ -99,7 +122,7 @@ def refresh_scores(db: Session, now: Optional[datetime] = None, days_back: int =
     if updated:
         from .performance import settle_predictions
         settle_predictions(db, now)
-    return {"ok": True, "live": live, "updated": updated}
+    return {"ok": True, "live": live, "updated": updated, "comp_ids": comp_ids}
 
 
 def _pick_state(p: Prediction, m: Match, live: Optional[dict]) -> str:

@@ -9,7 +9,7 @@ from ..engine.markets import DISPLAY_KEYS
 from ..engine.selection import DEFAULT_SETTINGS, merged_settings
 from ..models import Setting
 
-PROVIDER_NAMES = ("football_data_co_uk", "api_football", "football_data_org")
+PROVIDER_NAMES = ("football_data_co_uk", "api_football", "football_data_org", "allsports")
 
 BOUNDS = {
     "tier_a": (0.5, 0.99), "tier_b": (0.5, 0.99), "tier_c": (0.5, 0.99),

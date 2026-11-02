@@ -587,3 +587,77 @@ def test_stats_completion_sources(populated, monkeypatch):
         res = sc.complete_stats(db, now=when + timedelta(days=1))
         m = db.get(Match, mid)
         assert res[0]["status"] == "ok" and (m.home_corners, m.away_corners, m.home_yellow, m.away_red) == (6, 3, 2, 1)
+
+
+def test_allsports_africa(populated, monkeypatch):
+    """Championnat africain via AllSportsAPI : historique, calendrier, cotes, direct (réponses simulées en test)."""
+    from app.config import get_settings
+    from app.providers.allsports import AllSports
+    from app.services import allsports_sync as asy
+    from app.models import Competition, OddsQuote
+
+    teams = ["Djoliba", "Stade Malien", "Real Bamako", "Onze Createurs", "AS Bakaridjan", "Binga FC"]
+    base = datetime(2026, 1, 10, 16, 0, tzinfo=timezone.utc)
+    hist, k = [], 0
+    for r in range(4):
+        for i, h in enumerate(teams):
+            for j, a in enumerate(teams):
+                if i == j or (i + j + r) % 3:
+                    continue
+                k += 1
+                d = base + timedelta(days=7 * k // 3)
+                hist.append({"event_key": 1000 + k, "event_date": d.strftime("%Y-%m-%d"), "event_time": "16:00",
+                             "event_home_team": h, "event_away_team": a, "event_status": "Finished",
+                             "event_final_result": f"{(i + r) % 3} - {(j + k) % 2}", "event_halftime_result": "0 - 0",
+                             "league_season": "2025/2026",
+                             "statistics": [{"type": "Corners", "home": "1", "away": "0"},
+                                            {"type": "Corners", "home": "6", "away": "3"},
+                                            {"type": "Yellow Cards", "home": "2", "away": "1"}]})
+    now = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
+    upcoming = [{"event_key": 5001, "event_date": "2026-11-02", "event_time": "16:00", "event_home_team": "Djoliba",
+                 "event_away_team": "Stade Malien", "event_status": "", "event_final_result": "-",
+                 "league_season": "2026/2027"}]
+    odds = {"5001": [{"match_id": 5001, "odd_bookmakers": "bet365", "odd_1": 2.1, "odd_x": 3.0, "odd_2": 3.4,
+                      "o+2.5": 2.4, "ah0_1": 1.5, "bts_yes": None}]}
+    calls = []
+
+    def fake_get(self, met, **params):
+        calls.append((met, params.get("leagueId")))
+        if met == "Fixtures":
+            return [x for x in hist + upcoming if params["from"] <= x["event_date"] <= params["to"]]
+        if met == "Odds":
+            return odds
+        if met == "Livescore":
+            return [dict(upcoming[0], event_status="Finished", event_final_result="2 - 1",
+                         event_halftime_result="1 - 0", statistics=[{"type": "Corners", "home": "5", "away": "4"}])]
+        return []
+
+    monkeypatch.setattr(AllSports, "_get", fake_get)
+    monkeypatch.setattr(get_settings(), "allsports_key", "test")
+    with SessionLocal() as db:
+        comp = db.scalar(select(Competition).where(Competition.code == "MLI1"))
+        assert comp is not None and comp.primary_source == "allsports" and comp.allsports_id == 558
+        comp.enabled = True
+        db.commit()
+        res = asy.run_allsports(db, {"history", "upcoming"}, now, False, 2)
+        assert [r["status"] for r in res] == ["ok", "ok"], res
+        n_hist = db.scalar(select(func.count(Match.id)).where(Match.competition_id == comp.id, Match.status == "FINISHED"))
+        assert n_hist == len(hist)
+        m = db.scalar(select(Match).where(Match.competition_id == comp.id, Match.status == "FINISHED"))
+        assert (m.home_corners, m.away_corners, m.home_yellow, m.home_red) == (6, 3, 2, 0)  # total le plus élevé
+        up = db.scalar(select(Match).where(Match.competition_id == comp.id, Match.status == "SCHEDULED"))
+        assert up.source_ref == "5001" and up.kickoff == datetime(2026, 11, 2, 16, 0, tzinfo=timezone.utc)
+        q = {o.market_key: o.price for o in db.scalars(select(OddsQuote).where(OddsQuote.match_id == up.id))}
+        assert q == {"1": 2.1, "X": 3.0, "2": 3.4, "O2.5": 2.4}  # lignes asiatiques et valeurs nulles ignorées
+        # Deuxième passage : l'historique déjà en base n'est pas redemandé
+        calls.clear()
+        asy.run_allsports(db, {"history"}, now, False, 2)
+        assert not [c for c in calls if c[0] == "Fixtures"]  # années déjà importées : aucun nouvel appel
+        # Direct : le match se termine, score et statistiques enregistrés
+        asy._cache["at"] = 0.0
+        out = asy.live_scores(db, datetime(2026, 11, 2, 17, 50, tzinfo=timezone.utc), set())
+        db.refresh(up)
+        assert out["updated"] == 1 and up.status == "FINISHED" and (up.home_goals, up.away_goals, up.ht_home_goals) == (2, 1, 1)
+        assert (up.home_corners, up.away_corners) == (5, 4)
+        comp.enabled = False
+        db.commit()

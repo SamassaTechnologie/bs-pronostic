@@ -10,10 +10,10 @@ type Status = {
   calibration: { created_at: string | null; n_matches?: number; note?: string };
   database: string;
 };
-type Comp = { id: number; code: string; name: string; country: string; enabled: boolean; primary_source: string; api_football_id: number | null; fdorg_code: string | null; fdcuk_code: string | null; matches: number };
+type Comp = { id: number; code: string; name: string; country: string; enabled: boolean; primary_source: string; api_football_id: number | null; fdorg_code: string | null; fdcuk_code: string | null; allsports_id?: number | null; matches: number };
 type Run = { id: number; provider: string; kind: string; status: string; items: number; message: string | null; started_at: string };
 
-const SOURCE_LABEL: Record<string, string> = { football_data_co_uk: "football-data.co.uk", api_football: "API-Football", football_data_org: "football-data.org" };
+const SOURCE_LABEL: Record<string, string> = { football_data_co_uk: "football-data.co.uk", api_football: "API-Football", football_data_org: "football-data.org", allsports: "AllSportsAPI" };
 const NUMERIC_SETTINGS: [string, string, number][] = [
   ["tier_a", "Seuil niveau A", 0.01], ["tier_b", "Seuil niveau B", 0.01], ["tier_c", "Seuil niveau C", 0.01],
   ["min_probability", "Probabilité minimale d'un pronostic", 0.01], ["min_confidence", "Confiance minimale (/100)", 1],
@@ -259,7 +259,7 @@ export function AdminPanel() {
               <input type="checkbox" checked={c.enabled} onChange={() => updateComp(c, { enabled: !c.enabled })} className="h-4 w-4" aria-label={`Activer ${c.name}`} />
               <div className="min-w-0 flex-1">
                 <div className="truncate font-semibold">{c.name} <span className="font-normal text-steel">({c.country})</span></div>
-                <div className="text-xs text-steel">{SOURCE_LABEL[c.primary_source]}, {c.matches} matchs en base{c.api_football_id ? `, API-Football n° ${c.api_football_id}` : ""}</div>
+                <div className="text-xs text-steel">{SOURCE_LABEL[c.primary_source]}, {c.matches} matchs en base{c.api_football_id ? `, API-Football n° ${c.api_football_id}` : ""}{c.allsports_id ? `, AllSportsAPI n° ${c.allsports_id}` : ""}</div>
               </div>
               <select value={c.primary_source} onChange={(e) => updateComp(c, { primary_source: e.target.value })} className="max-w-36 rounded-lg border border-line px-2 py-1 text-xs" aria-label="Source principale">
                 {Object.entries(SOURCE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}

@@ -94,7 +94,7 @@ def put_settings(changes: dict, db: Session = Depends(get_db)):
 def _comp_row(c: Competition, n_matches: int = 0) -> dict:
     return {"id": c.id, "code": c.code, "name": c.name, "country": c.country, "enabled": c.enabled,
             "primary_source": c.primary_source, "fdcuk_code": c.fdcuk_code, "fdcuk_extra": c.fdcuk_extra,
-            "api_football_id": c.api_football_id, "fdorg_code": c.fdorg_code, "calendar_year": c.calendar_year,
+            "api_football_id": c.api_football_id, "fdorg_code": c.fdorg_code, "allsports_id": c.allsports_id, "calendar_year": c.calendar_year,
             "matches": n_matches}
 
 
@@ -108,10 +108,11 @@ def list_competitions(db: Session = Depends(get_db)):
 
 class CompetitionUpdate(BaseModel):
     enabled: Optional[bool] = None
-    primary_source: Optional[str] = Field(None, pattern="^(football_data_co_uk|api_football|football_data_org)$")
+    primary_source: Optional[str] = Field(None, pattern="^(football_data_co_uk|api_football|football_data_org|allsports)$")
     api_football_id: Optional[int] = None
     fdorg_code: Optional[str] = None
     fdcuk_code: Optional[str] = None
+    allsports_id: Optional[int] = None
     calendar_year: Optional[bool] = None
 
 
@@ -128,6 +129,8 @@ def update_competition(comp_id: int, body: CompetitionUpdate, db: Session = Depe
         raise HTTPException(400, "Identifiant de ligue API-Football requis pour cette source")
     if c.primary_source == "football_data_org" and not c.fdorg_code:
         raise HTTPException(400, "Code football-data.org requis pour cette source")
+    if c.primary_source == "allsports" and not c.allsports_id:
+        raise HTTPException(400, "Identifiant de ligue AllSportsAPI requis pour cette source")
     db.commit()
     return _comp_row(c)
 

@@ -599,6 +599,9 @@ def run_sync(db: Session, kinds: Iterable[str] = ("history", "upcoming", "enrich
             results.append(_fo_history(db, fo, fo_comps, now, force))
         if "upcoming" in kinds:
             results.append(_fo_upcoming(db, fo, fo_comps, now, int(sel["days_ahead"])))
+    if flags.get("allsports", True):
+        from .allsports_sync import run_allsports
+        results.extend(run_allsports(db, kinds, now, force, int(sel["days_ahead"])))
     if not results:
         results.append({"provider": "-", "kind": "-", "status": "skipped", "items": 0,
                         "message": "Aucune source active pour les compétitions activées"})

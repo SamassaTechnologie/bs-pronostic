@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     football_data_org_base_url: str = "https://api.football-data.org/v4"
     footballdata_io_key: str = ""  # corners/cartons rapides : PL, LaLiga, C1, C3 (gratuit, 1 000 req/mois)
     sportmonks_key: str = ""  # Écosse et Danemark (gratuit) : mi-temps, corners, cartons
+    allsports_key: str = ""  # AllSportsAPI : championnats africains, cotes, scores en direct
+    allsports_daily_budget: int = 300  # requêtes maximum par jour (arrêt automatique au-delà)
+    allsports_live_seconds: int = 300  # intervalle minimal entre deux appels « direct »
     http_timeout: float = 25.0
     http_user_agent: str = "SAM-Prediction/1.0 (+analyse statistique)"
 

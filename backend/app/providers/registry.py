@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..models import ApiUsage, SyncRun
+from .allsports import AllSports
 from .api_football import ApiFootball
 from .base import Provider
 from .football_data_co_uk import FootballDataCoUk
@@ -16,6 +17,7 @@ PROVIDERS: dict[str, type[Provider]] = {
     "football_data_co_uk": FootballDataCoUk,
     "api_football": ApiFootball,
     "football_data_org": FootballDataOrg,
+    "allsports": AllSports,
 }
 
 SETUP_HELP = {
@@ -24,6 +26,8 @@ SETUP_HELP = {
                     "API_FOOTBALL_KEY côté serveur.",
     "football_data_org": "Inscrivez-vous sur football-data.org/client/register : la clé arrive par e-mail ; "
                          "renseignez FOOTBALL_DATA_ORG_KEY côté serveur.",
+    "allsports": "Créez un compte sur allsportsapi.com, copiez la clé de l'espace « admin » dans ALLSPORTS_KEY "
+                 "côté serveur. Championnats africains, cotes et scores en direct.",
 }
 
 
