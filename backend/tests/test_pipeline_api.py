@@ -680,10 +680,60 @@ def test_allsports_africa(populated, monkeypatch):
         asy.run_allsports(db, {"history"}, now, False, 2)
         assert not [c for c in calls if c[0] == "Fixtures"]  # années déjà importées : aucun nouvel appel
         # Direct : le match se termine, score et statistiques enregistrés
-        asy._cache["at"] = 0.0
+        asy._cache["at"] = None
         out = asy.live_scores(db, datetime(2026, 11, 2, 17, 50, tzinfo=timezone.utc), set())
         db.refresh(up)
         assert out["updated"] == 1 and up.status == "FINISHED" and (up.home_goals, up.away_goals, up.ht_home_goals) == (2, 1, 1)
         assert (up.home_corners, up.away_corners) == (5, 4)
         comp.enabled = False
+        db.commit()
+
+
+def test_sportapi_fast_results_and_live_backup(populated, monkeypatch):
+    """SportAPI.ai : score final + mi-temps d'un match sans résultat, puis direct de secours (réponses simulées)."""
+    from app.config import get_settings
+    from app.services import sportapi as sa
+
+    with SessionLocal() as db:
+        m = db.scalars(select(Match).join(Competition, Match.competition_id == Competition.id).where(
+            Match.status == "FINISHED", Competition.enabled.is_(True)).order_by(Match.kickoff.desc())).first()
+        saved = (m.status, m.home_goals, m.away_goals, m.ht_home_goals, m.ht_away_goals)
+        m.status, m.home_goals, m.away_goals, m.ht_home_goals, m.ht_away_goals = "SCHEDULED", None, None, None, None
+        db.commit()
+        mid, home, away, ko = m.id, m.home_team.name, m.away_team.name, m.kickoff
+
+    class R:
+        status_code = 200
+
+        def __init__(self, d):
+            self._d = d
+
+        def json(self):
+            return self._d
+
+    row = {"id": 77, "kickoff_utc": ko.strftime("%Y-%m-%dT%H:%M:%SZ"), "home_team": home, "away_team": away,
+           "status": "FT", "home_score": 3, "away_score": 1, "minute": None}
+
+    def fake_get(url, headers=None, timeout=None):
+        assert headers["X-Api-Key"] == "sk_test"
+        if url.endswith("/fixtures/77"):
+            return R({"success": True, "fixture": {"ht_home": 1, "ht_away": 0}})
+        return R({"success": True, "data": [row, dict(row, id=78, home_team="Équipe inconnue", away_team="Autre")]})
+
+    monkeypatch.setattr(sa.httpx, "get", fake_get)
+    monkeypatch.setattr(get_settings(), "sportapi_key", "sk_test")
+    with SessionLocal() as db:
+        res = sa.complete_results(db, ko + timedelta(hours=4))
+        m = db.get(Match, mid)
+        assert res["status"] == "ok" and res["items"] == 1
+        assert (m.status, m.home_goals, m.away_goals, m.ht_home_goals, m.ht_away_goals) == ("FINISHED", 3, 1, 1, 0)
+        # Direct de secours : match en cours
+        m.status, m.home_goals, m.away_goals = "SCHEDULED", None, None
+        db.commit()
+        row.update(status="LIVE", minute="63'", home_score=1, away_score=1)
+        sa._cache["at"] = None
+        out = sa.live_fallback(db, ko + timedelta(minutes=80), [db.get(Match, mid)])
+        assert out["ok"] and out["live"][0]["minute"] == "63" and out["live"][0]["home"] == 1
+        m = db.get(Match, mid)
+        m.status, m.home_goals, m.away_goals, m.ht_home_goals, m.ht_away_goals = saved
         db.commit()

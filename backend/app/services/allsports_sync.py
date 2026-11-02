@@ -171,7 +171,7 @@ def run_allsports(db: Session, kinds: set, now: datetime, force: bool, days_ahea
 # ---------------------------------------------------------------------------
 
 _lock = threading.Lock()
-_cache: dict = {"at": 0.0, "live": [], "error": None}
+_cache: dict = {"at": None, "live": [], "error": None}
 
 
 def _find(cands: list[Match], x: dict) -> Optional[Match]:
@@ -192,6 +192,14 @@ def _find(cands: list[Match], x: dict) -> Optional[Match]:
     return None
 
 
+def live_candidates(db: Session, now: datetime, skip_comp_ids: set[int]) -> list[Match]:
+    """Matchs suivis susceptibles d'être en cours (hors compétitions couvertes par football-data.org)."""
+    cands = db.scalars(select(Match).join(Competition, Match.competition_id == Competition.id).where(
+        Competition.enabled.is_(True), Match.status.in_(("SCHEDULED", "LIVE")),
+        Match.kickoff >= now - timedelta(minutes=170), Match.kickoff <= now + timedelta(minutes=5))).unique().all()
+    return [m for m in cands if m.competition_id not in skip_comp_ids]
+
+
 def live_scores(db: Session, now: datetime, skip_comp_ids: set[int]) -> dict:
     """Scores en direct AllSportsAPI pour les matchs suivis hors football-data.org ; enregistre aussi les scores
     finaux (et, pour les compétitions dont AllSportsAPI est la source, la mi-temps, les corners et les cartons)."""
@@ -200,14 +208,11 @@ def live_scores(db: Session, now: datetime, skip_comp_ids: set[int]) -> dict:
     cfg = get_settings()
     if not cfg.allsports_key or not get_provider_flags(db).get("allsports", True):
         return {"ok": False, "live": [], "updated": 0, "error": None}
-    cands = db.scalars(select(Match).join(Competition, Match.competition_id == Competition.id).where(
-        Competition.enabled.is_(True), Match.status.in_(("SCHEDULED", "LIVE")),
-        Match.kickoff >= now - timedelta(minutes=170), Match.kickoff <= now + timedelta(minutes=5))).unique().all()
-    cands = [m for m in cands if m.competition_id not in skip_comp_ids]
+    cands = live_candidates(db, now, skip_comp_ids)
     if not cands:
         return {"ok": True, "live": [], "updated": 0, "error": None}
     with _lock:
-        if time.monotonic() - _cache["at"] < cfg.allsports_live_seconds:
+        if _cache["at"] is not None and time.monotonic() - _cache["at"] < cfg.allsports_live_seconds:
             ids = {m.id for m in cands}
             return {"ok": _cache["error"] is None, "live": [x for x in _cache["live"] if x["match_id"] in ids],
                     "updated": 0, "error": _cache["error"]}

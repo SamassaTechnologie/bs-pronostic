@@ -54,6 +54,10 @@ def run_pipeline(db: Session, kinds=("history", "upcoming", "enrich"), force: bo
         _state["step"] = "statistiques"
         from .stats_completion import complete_stats
         sync.extend(complete_stats(db))
+        from .sportapi import complete_results
+        res_fast = complete_results(db, utcnow())
+        if res_fast:
+            sync.append(res_fast)
         _state["step"] = "analyse"
         analysis = run_analysis(db)
         _state["step"] = "règlement"

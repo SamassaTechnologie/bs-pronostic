@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     allsports_key: str = ""  # AllSportsAPI : championnats africains, cotes, scores en direct
     allsports_daily_budget: int = 300  # requêtes maximum par jour (arrêt automatique au-delà)
     allsports_live_seconds: int = 300  # intervalle minimal entre deux appels « direct »
+    sportapi_key: str = ""  # SportAPI.ai : résultats rapides et direct de secours (gratuit 2 000 req/jour)
+    sportapi_daily_budget: int = 400  # plafond prudent (14 000/mois sur l'offre gratuite)
     http_timeout: float = 25.0
     http_user_agent: str = "SAM-Prediction/1.0 (+analyse statistique)"
 

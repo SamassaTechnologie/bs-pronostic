@@ -65,6 +65,13 @@ def refresh_scores(db: Session, now: Optional[datetime] = None, days_back: int =
     fo_ok = res.get("ok") and res.get("error") is None
     skip = set(res.pop("comp_ids", [])) if fo_ok else set()
     extra = live_scores(db, now, skip)
+    if not extra["ok"]:
+        # AllSportsAPI indisponible : SportAPI.ai prend le relais pour le direct
+        from .allsports_sync import live_candidates
+        from .sportapi import live_fallback
+        backup = live_fallback(db, now, live_candidates(db, now, skip))
+        if backup["ok"] or backup["live"]:
+            extra = backup
     seen = {x["match_id"] for x in res.get("live", [])}
     res["live"] = res.get("live", []) + [x for x in extra["live"] if x["match_id"] not in seen]
     res["updated"] = res.get("updated", 0) + extra["updated"]
