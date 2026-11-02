@@ -93,7 +93,8 @@ npm run dev                 # http://localhost:3000
 | **football-data.co.uk** | aucune | Résultats, mi-temps, tirs, corners, cartons, cotes 1X2 et +/-2,5 de plusieurs bookmakers pour 22 divisions européennes, plus 15 « nouvelles ligues » (résultats et cotes uniquement) ; calendrier de la semaine avec cotes | entièrement gratuit |
 | **API-Football** (api-sports.io) | `API_FOOTBALL_KEY` | Calendrier de plus de 1 000 compétitions (dont africaines), blessures/suspensions, cotes double chance, BTTS, mi-temps, corners, cartons | 100 requêtes/jour, tous les endpoints, saisons limitées ; Pro à 19 $/mois pour 7 500 requêtes/jour |
 | **football-data.org** | `FOOTBALL_DATA_ORG_KEY` | Calendrier et résultats de 12 compétitions dont la Ligue des champions | 12 compétitions, 10 appels/minute, scores différés, ni cotes ni statistiques |
-| Sportmonks | non intégré | Données très riches (xG, prédictions) | 2 ligues gratuites (Danemark, Écosse) ; plans payants par nombre de ligues. L'interface `Provider` permet de l'ajouter. |
+| Sportmonks | `SPORTMONKS_KEY` | Mi-temps, corners, cartons (Écosse, Danemark) | 2 ligues gratuites |
+| **AllSportsAPI** | `ALLSPORTS_KEY` | Championnats africains (Mali, Sénégal, Côte d'Ivoire, Maroc, Algérie, Tunisie, Égypte, Afrique du Sud ; Nigeria, Ghana, Cameroun, Guinée, Burkina Faso à activer), coupes CAF, résultats avec mi-temps, corners et cartons, cotes de 10 bookmakers (1X2, double chance, buts, BTTS), scores en direct | essai complet jusqu'au 17 novembre 2026 ; plafond prudent `ALLSPORTS_DAILY_BUDGET` = 300 requêtes/jour |
 
 **Obtenir la clé API-Football** : créez un compte sur https://dashboard.api-football.com, la clé apparaît dans *Account → My Access*. Collez-la dans la variable `API_FOOTBALL_KEY` du backend (jamais dans le frontend). Dans l'administration, « Tester la connexion » affiche le plan et le quota réels. Si la saison en cours n'est pas couverte par le plan gratuit, l'erreur renvoyée par API-Football est affichée telle quelle.
 
@@ -200,6 +201,13 @@ Générer des secrets : `python -c "import secrets; print(secrets.token_urlsafe(
   (`FOOTBALLDATA_IO_KEY`, gratuit 1 000 req/mois ; Premier League, LaLiga, C1, C3 ; plafond prudent 25/jour) et
   Sportmonks (`SPORTMONKS_KEY`, gratuit ; Écosse, Danemark) complètent corners, cartons et score à la mi-temps des
   matchs terminés auxquels il manque ces données (jamais d'écrasement), pour régler pronostics et paris plus tôt.
+- **AllSportsAPI** (`app/providers/allsports.py`, `app/services/allsports_sync.py`) : source principale des
+  compétitions `primary_source = "allsports"` (championnats africains, coupes CAF). Historique importé une fois par
+  année (mémorisé dans le réglage `allsports_history`), puis un appel calendrier + un appel cotes par championnat et
+  par synchronisation. Scores en direct (et scores finaux) des championnats non couverts par football-data.org, au
+  plus un appel toutes les 5 minutes et seulement si un match suivi est en cours. Les corners et cartons
+  d'AllSportsAPI ne sont enregistrés que pour ses propres compétitions : contrôle du 2 novembre 2026 sur 33 matchs
+  de Premier League et LaLiga, 30 corners et 27 cartons identiques à football-data.co.uk, qui reste la référence.
 - Variables Vercel supplémentaires : `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
 - Supabase → Authentication → URL Configuration : *Site URL* = l'adresse du site, *Redirect URLs* = `https://VOTRE-SITE/auth/callback`.
 
