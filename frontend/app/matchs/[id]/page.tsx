@@ -280,7 +280,7 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                   <strong>Match à éviter.</strong> {a.avoid_reasons.join(". ")}.
                 </div>
               )}
-              {meta.data?.ai?.configured && (
+              {meta.data?.ai?.configured && meta.data.ai.analyses !== false && (
                 <Link href={`/matchs/${m.id}?onglet=ia`} replace scroll={false}
                   className="mt-4 flex items-center justify-between gap-3 rounded-xl border border-pitch/30 bg-pitch-soft/40 px-4 py-3">
                   <span className="min-w-0">

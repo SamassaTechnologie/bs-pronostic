@@ -454,6 +454,32 @@ def test_assistant_tools_and_checks(populated, client, monkeypatch):
     assert client.post("/api/assistant", json={"question": "Bonjour"}, headers=h).json()["status"] == "ok"
     assert client.post("/api/assistant", json={"question": "Bonjour"}, headers=h).json()["status"] == "quota"
 
+    # Réglages de l'administration : liste d'accès, coupure, analyses préparées seulement
+    assert client.put("/api/admin/ai/settings", json={"assistant": "liste", "allowed_emails": "Ami@Exemple.ml, x"},
+                      headers=ADMIN).status_code == 400  # adresse invalide refusée
+    cfg = client.put("/api/admin/ai/settings", json={"assistant": "liste", "allowed_emails": "Ami@Exemple.ml",
+                                                     "member_daily": 5}, headers=ADMIN).json()
+    assert cfg["allowed_emails"] == ["ami@exemple.ml"] and cfg["member_daily"] == 5
+    h2 = {"X-Assistant-Token": "secret", "X-Member-Id": "membre-2", "X-Member-Email": "autre@exemple.ml"}
+    assert client.post("/api/assistant", json={"question": "Bonjour"}, headers=h2).json()["status"] == "forbidden"
+    h2["X-Member-Email"] = "ami@exemple.ml"
+    assert client.post("/api/assistant", json={"question": "Bonjour"}, headers=h2).json()["status"] == "ok"
+    client.put("/api/admin/ai/settings", json={"assistant": "off", "analyses": "preparees"}, headers=ADMIN)
+    assert client.post("/api/assistant", json={"question": "Bonjour"}, headers=h2).json()["status"] == "disabled"
+    meta = client.get("/api/meta").json()["ai"]
+    assert meta["assistant"] is False and meta["analyses"] is True
+    st = client.get("/api/admin/ai/status", headers=ADMIN).json()
+    assert st["used_assistant"] >= 1 and st["questions_today"] >= 2 and st["settings"]["assistant"] == "off"
+    client.put("/api/admin/ai/settings", json={"analyses": "off"}, headers=ADMIN)
+    assert client.get(f"/api/matches/{lm_id(client)}/ai").json()["status"] == "disabled"
+    client.put("/api/admin/ai/settings", json={"assistant": "tous", "analyses": "auto", "allowed_emails": []},
+               headers=ADMIN)
+
+
+def lm_id(client):
+    with SessionLocal() as db:
+        return db.scalar(select(Match.id).order_by(Match.kickoff.desc()))
+
 
 def test_jouer_virtual_bets(populated, monkeypatch):
     """Section Jouer : portefeuille, cotes relues côté serveur, combiné, règlement, classement."""

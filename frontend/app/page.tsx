@@ -104,7 +104,9 @@ export default async function Home() {
         {[
           { href: "/pronostics?best=1", label: "Meilleurs pronos", icon: "M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z", tone: "bg-pitch-soft text-pitch-deep" },
           { href: "/jouer", label: "Jouer", icon: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM12 7.5l3.8 2.8-1.5 4.4H9.7l-1.5-4.4z", tone: "bg-sky-soft text-sky" },
-          { href: "/assistant", label: "Assistant IA", icon: "M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z", tone: "bg-night text-white" },
+          meta.data?.ai?.assistant !== false
+            ? { href: "/assistant", label: "Assistant IA", icon: "M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z", tone: "bg-night text-white" }
+            : { href: "/historique", label: "Bilan", icon: "M4 19V5M4 19h16M8 15l3-4 3 2 4-6", tone: "bg-night text-white" },
           { href: "/combines", label: "Combinés", icon: "M4 7h16M4 12h16M4 17h10", tone: "bg-amber-soft text-amber" },
         ].map((a) => (
           <Link key={a.href} href={a.href} className="flex flex-col items-center gap-1.5 rounded-xl border border-line bg-white px-1 py-3 text-center">

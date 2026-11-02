@@ -21,7 +21,10 @@ async function forward(req: NextRequest, path: string[], method: "GET" | "POST")
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (p === "assistant") {
     headers["X-Assistant-Token"] = process.env.ASSISTANT_TOKEN || "";
-    if (member) headers["X-Member-Id"] = member.id;
+    if (member) {
+      headers["X-Member-Id"] = member.id;
+      if (member.email) headers["X-Member-Email"] = member.email;
+    }
   }
   if (p.startsWith("jeu/")) {
     // Section Jouer : identité du membre ajoutée ici, côté serveur (jamais fournie par le navigateur).

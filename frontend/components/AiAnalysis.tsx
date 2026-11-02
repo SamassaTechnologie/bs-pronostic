@@ -14,7 +14,7 @@ type AiContent = {
 };
 type AiResponse =
   | { status: "ok"; provider: string; model: string; created_at: string; removed_sentences: number; stale?: boolean; analysis: AiContent }
-  | { status: "not_configured" | "insufficient" | "unavailable" | "error" | "pending"; message: string; retryable?: boolean };
+  | { status: "not_configured" | "insufficient" | "unavailable" | "error" | "pending" | "disabled"; message: string; retryable?: boolean };
 
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
   return (

@@ -216,6 +216,22 @@ def ai_status(db: Session = Depends(get_db)):
     return status(db)
 
 
+@router.get("/ai/settings")
+def ai_settings_get(db: Session = Depends(get_db)):
+    from ..services.ai_settings import get_ai_settings
+    return get_ai_settings(db)
+
+
+@router.put("/ai/settings")
+def ai_settings_put(changes: dict, db: Session = Depends(get_db)):
+    """Autoriser, limiter ou couper l'IA (analyses des matchs, assistant, quotas)."""
+    from ..services.ai_settings import update_ai_settings
+    try:
+        return update_ai_settings(db, changes)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
 @router.post("/ai/test")
 def ai_test(db: Session = Depends(get_db)):
     """Appel réel et minimal à chaque fournisseur configuré (aucune réponse simulée)."""

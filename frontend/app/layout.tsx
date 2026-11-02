@@ -6,6 +6,8 @@ import { SwRegister } from "@/components/SwRegister";
 import { SearchBox } from "@/components/SearchBox";
 import { FollowsProvider } from "@/components/Follows";
 import { currentMember } from "@/lib/supabase/server";
+import { backend } from "@/lib/api";
+import type { Meta } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: { default: "SAM-Prédiction", template: "%s · SAM-Prédiction" },
@@ -24,7 +26,9 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const signedIn = Boolean(await currentMember());
+  const [member, meta] = await Promise.all([currentMember(), backend<Meta>("/api/meta", { revalidate: 60 })]);
+  const signedIn = Boolean(member);
+  const showAssistant = meta.data?.ai?.configured !== false && meta.data?.ai?.assistant !== false;
   return (
     <html lang="fr">
       <body>
@@ -39,13 +43,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </Link>
             <div className="flex items-center gap-1">
               <DesktopNav signedIn={signedIn} />
-              <Link href="/assistant" aria-label="Assistant IA"
+              {showAssistant && <Link href="/assistant" aria-label="Assistant IA"
                 className="flex h-9 items-center gap-1 rounded-lg bg-pitch px-2.5 text-[13px] font-bold text-white hover:bg-pitch-deep">
                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                   <path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8zM19 15l.8 2.2 2.2.8-2.2.8L19 21l-.8-2.2-2.2-.8 2.2-.8z" />
                 </svg>
                 IA
-              </Link>
+              </Link>}
               <SearchBox />
             </div>
           </div>

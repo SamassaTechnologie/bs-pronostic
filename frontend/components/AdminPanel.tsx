@@ -39,6 +39,12 @@ const fmt = (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleStr
 type AiStatus = {
   configured: boolean; provider: string | null; model: string | null; fallback: string | null;
   used_today: number; daily_budget: number; cached: number; setup: { gemini: string; groq: string };
+  used_analyses?: number; used_assistant?: number; questions_today?: number;
+  members_today?: { member: string; questions: number }[]; settings?: AiCfg;
+};
+type AiCfg = {
+  analyses: "auto" | "preparees" | "off"; assistant: "tous" | "liste" | "off";
+  daily_budget: number; member_daily: number; pregenerate_limit: number; max_steps: number; allowed_emails: string[];
 };
 
 export function AdminPanel() {
@@ -118,6 +124,22 @@ export function AdminPanel() {
       setTests((t) => ({ ...t, [name]: r }));
     } catch (e) {
       setTests((t) => ({ ...t, [name]: { ok: false, message: e instanceof Error ? e.message : "Erreur" } }));
+    }
+  }
+
+  async function saveAi(form: FormData) {
+    const body = {
+      analyses: form.get("analyses"), assistant: form.get("assistant"),
+      daily_budget: Number(form.get("daily_budget")), member_daily: Number(form.get("member_daily")),
+      pregenerate_limit: Number(form.get("pregenerate_limit")), max_steps: Number(form.get("max_steps")),
+      allowed_emails: String(form.get("allowed_emails") || ""),
+    };
+    try {
+      await api<AiCfg>("ai/settings", { method: "PUT", body: JSON.stringify(body) });
+      setNotice({ ok: true, text: "Réglages de l'IA enregistrés. Ils s'appliquent immédiatement." });
+      api<AiStatus>("ai/status").then(setAi).catch(() => {});
+    } catch (e) {
+      setNotice({ ok: false, text: e instanceof Error ? e.message : "Erreur" });
     }
   }
 
@@ -231,6 +253,73 @@ export function AdminPanel() {
           {aiTest && <p className="mt-1 text-xs font-semibold text-night">{aiTest}</p>}
           <button onClick={testAi} className="mt-2 rounded-lg bg-mist px-3 py-1.5 text-xs font-bold">Tester l&apos;IA</button>
         </div>
+
+        {ai?.settings && (
+          <>
+            <div className={`${box} mt-3 grid grid-cols-3 gap-2 p-3 text-center`}>
+              <div><div className="text-[11px] text-steel">Appels IA aujourd&apos;hui</div><div className="font-display text-lg font-bold">{ai.used_today} / {ai.daily_budget}</div></div>
+              <div><div className="text-[11px] text-steel">Analyses de matchs</div><div className="font-display text-lg font-bold">{ai.used_analyses ?? 0}</div></div>
+              <div><div className="text-[11px] text-steel">Assistant</div><div className="font-display text-lg font-bold">{ai.used_assistant ?? 0}</div><div className="text-[10px] text-steel">{ai.questions_today ?? 0} question(s)</div></div>
+            </div>
+            <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-line">
+              <div className={`h-full ${ai.used_today >= ai.daily_budget * 0.8 ? "bg-brick" : "bg-pitch"}`} style={{ width: `${Math.min(100, ai.daily_budget ? (ai.used_today / ai.daily_budget) * 100 : 100)}%` }} />
+            </div>
+
+            <form key={JSON.stringify(ai.settings)} action={saveAi} className={`${box} mt-3 space-y-3 p-4 text-sm`}>
+              <h3 className="font-bold">Autoriser ou limiter l&apos;IA</h3>
+              <label className="block">
+                <span className="text-xs font-semibold text-steel">Analyses IA des matchs</span>
+                <select name="analyses" defaultValue={ai.settings.analyses} className="mt-1 w-full rounded-lg border border-line bg-white px-2 py-2">
+                  <option value="auto">Autorisées : préparées à l&apos;avance + rédigées à la demande des membres</option>
+                  <option value="preparees">Limitées : seulement Sélection SAM et pronostics à cote (préparées à l&apos;avance)</option>
+                  <option value="off">Désactivées</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-steel">Assistant IA</span>
+                <select name="assistant" defaultValue={ai.settings.assistant} className="mt-1 w-full rounded-lg border border-line bg-white px-2 py-2">
+                  <option value="tous">Autorisé à tous les membres connectés</option>
+                  <option value="liste">Réservé aux membres de la liste ci-dessous</option>
+                  <option value="off">Désactivé</option>
+                </select>
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-steel">Membres autorisés (adresses e-mail, une par ligne) : utilisé si l&apos;assistant est « réservé »</span>
+                <textarea name="allowed_emails" rows={3} defaultValue={ai.settings.allowed_emails.join("\n")} placeholder="exemple@gmail.com"
+                  className="mt-1 w-full rounded-lg border border-line bg-white px-2 py-2 font-mono text-xs" />
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                {([
+                  ["daily_budget", "Appels IA max. par jour (tout compris)", 0, 2000],
+                  ["member_daily", "Questions par membre et par jour", 0, 100],
+                  ["pregenerate_limit", "Analyses préparées par synchronisation", 0, 40],
+                  ["max_steps", "Recherches max. par question", 1, 6],
+                ] as const).map(([k, label, min, max]) => (
+                  <label key={k} className="block">
+                    <span className="text-xs font-semibold text-steel">{label}</span>
+                    <input name={k} type="number" min={min} max={max} defaultValue={ai.settings![k]} className="mt-1 w-full rounded-lg border border-line bg-white px-2 py-2" />
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] leading-relaxed text-steel">
+                Une question à l&apos;assistant consomme jusqu&apos;à « recherches max. + 1 » appels ; une analyse de match 1 à 2 appels.
+                Au-delà du plafond quotidien, l&apos;IA s&apos;arrête jusqu&apos;au lendemain (les analyses déjà rédigées restent affichées).
+              </p>
+              <button className="rounded-lg bg-night px-4 py-2 text-sm font-bold text-white">Enregistrer</button>
+            </form>
+
+            {ai.members_today && ai.members_today.length > 0 && (
+              <div className={`${box} mt-3 p-4 text-sm`}>
+                <h3 className="mb-1 font-bold">Questions à l&apos;assistant aujourd&apos;hui</h3>
+                <ul className="divide-y divide-mist">
+                  {ai.members_today.map((x) => (
+                    <li key={x.member} className="flex justify-between py-1.5"><span className="truncate">{x.member}</span><strong>{x.questions}</strong></li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        )}
       </section>
 
       {settings && (

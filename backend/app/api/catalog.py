@@ -343,7 +343,8 @@ class AssistantRequest(BaseModel):
 @router.post("/assistant")
 def assistant(req: AssistantRequest, db: Session = Depends(get_db),
               x_assistant_token: Optional[str] = Header(default=None),
-              x_member_id: Optional[str] = Header(default=None)):
+              x_member_id: Optional[str] = Header(default=None),
+              x_member_email: Optional[str] = Header(default=None)):
     """Assistant IA : réponses construites avec les outils du moteur SAM (combinés, sélections, dossiers)."""
     import hmac
     from ..config import get_settings
@@ -352,4 +353,5 @@ def assistant(req: AssistantRequest, db: Session = Depends(get_db),
     if expected and not hmac.compare_digest(x_assistant_token or "", expected):
         raise HTTPException(401, "Accès réservé à l'application SAM-Prédiction")
     return ask_assistant(db, req.question.strip(), [h.model_dump() for h in req.history],
-                         (x_member_id or "")[:36] or None, req.match_id)
+                         (x_member_id or "")[:36] or None, req.match_id,
+                         email=((x_member_email or "")[:200] or None) if expected else None)

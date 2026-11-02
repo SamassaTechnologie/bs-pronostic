@@ -13,7 +13,8 @@ from ..ai.analyst import (SCHEMA, SYSTEM_PROMPT, build_dossier, check_output, en
                           user_prompt)
 from ..ai.providers import AIError, call_with_fallback, configured_providers, provider_info
 from ..config import get_settings
-from ..models import AiAnalysis, Analysis, ApiUsage, Match, Prediction, utcnow
+from ..models import AiAnalysis, Analysis, ApiUsage, Match, Prediction, Wallet, utcnow
+from .ai_settings import get_ai_settings, member_allowed
 
 log = logging.getLogger("sam.ai")
 USAGE_KEY = "ia"
@@ -31,20 +32,40 @@ def usage_today(db: Session) -> int:
     return row.requests if row else 0
 
 
-def _count_call(db: Session) -> None:
-    key = (USAGE_KEY, date.today().isoformat())
-    row = db.get(ApiUsage, key)
-    if row is None:
-        db.add(ApiUsage(provider=key[0], day=key[1], requests=1))
-    else:
-        row.requests += 1
+def _usage(db: Session, key: str) -> int:
+    row = db.get(ApiUsage, (key, date.today().isoformat()))
+    return row.requests if row else 0
+
+
+def _count_call(db: Session, kind: str = "analyse") -> None:
+    """Un appel au fournisseur d'IA : compteur global « ia » et compteur par fonction (analyse / assistant)."""
+    day = date.today().isoformat()
+    for k in (USAGE_KEY, f"{USAGE_KEY}-{kind}"):
+        row = db.get(ApiUsage, (k, day))
+        if row is None:
+            db.add(ApiUsage(provider=k, day=day, requests=1))
+        else:
+            row.requests += 1
     db.commit()
+
+
+def _budget(db: Session) -> int:
+    return int(get_ai_settings(db)["daily_budget"])
 
 
 def status(db: Session) -> dict:
     info = provider_info()
-    info.update({"used_today": usage_today(db), "daily_budget": get_settings().ai_daily_budget,
-                 "cached": db.query(AiAnalysis).count()})
+    cfg = get_ai_settings(db)
+    day = date.today().isoformat()
+    rows = db.query(ApiUsage).filter(ApiUsage.day == day, ApiUsage.provider.like("as:%")).all()
+    names = {w.member_id: w.display_name for w in db.query(Wallet).all()}
+    members = sorted(({"member": names.get(r.provider[3:]) or f"Membre {r.provider[3:7].upper()}",
+                       "questions": r.requests} for r in rows), key=lambda x: x["questions"], reverse=True)
+    info.update({"used_today": usage_today(db), "daily_budget": cfg["daily_budget"],
+                 "used_analyses": _usage(db, f"{USAGE_KEY}-analyse"),
+                 "used_assistant": _usage(db, f"{USAGE_KEY}-assistant"),
+                 "cached": db.query(AiAnalysis).count(), "settings": cfg,
+                 "members_today": members[:15], "questions_today": sum(r.requests for r in rows)})
     return info
 
 
@@ -79,9 +100,9 @@ def generate(db: Session, m: Match, a: Analysis) -> AiAnalysis:
     feedback: Optional[list[str]] = None
     out, prov = None, None
     for _ in range(2):
-        if usage_today(db) >= get_settings().ai_daily_budget:
+        if usage_today(db) >= _budget(db):
             raise AIError("Quota quotidien d'analyses IA atteint : nouvelles analyses demain")
-        _count_call(db)
+        _count_call(db, "analyse")
         out, prov = call_with_fallback(SYSTEM_PROMPT, user_prompt(dossier, feedback), SCHEMA)
         feedback = check_output(out, dossier, market_keys)
         if not feedback:
@@ -104,7 +125,13 @@ def generate(db: Session, m: Match, a: Analysis) -> AiAnalysis:
     return row
 
 
-def get_match_ai(db: Session, match_id: int, allow_generate: bool = True) -> dict:
+def get_match_ai(db: Session, match_id: int, allow_generate: bool = True, internal: bool = False) -> dict:
+    """internal=True : préparation automatique (seule autorisée à rédiger en mode « preparees »)."""
+    mode = get_ai_settings(db)["analyses"]
+    if mode == "off":
+        return {"status": "disabled", "message": "L'analyse IA est désactivée pour le moment"}
+    if mode == "preparees" and not internal:
+        allow_generate = False
     m = db.get(Match, match_id)
     if m is None:
         return {"status": "not_found", "message": "Match introuvable"}
@@ -121,7 +148,8 @@ def get_match_ai(db: Session, match_id: int, allow_generate: bool = True) -> dic
             return _response(row, a.payload)
         return {"status": "unavailable", "message": "L'analyse IA est rédigée avant le coup d'envoi uniquement"}
     if not allow_generate:
-        return {"status": "pending", "message": "Analyse IA pas encore rédigée"}
+        return {"status": "pending", "message": "Analyse IA rédigée uniquement pour les matchs de la Sélection SAM et "
+                                                "les pronostics à cote" if mode == "preparees" else "Analyse IA pas encore rédigée"}
     lock = _lock_for(m.id)
     with lock:  # une seule rédaction à la fois par match
         db.expire_all()
@@ -140,10 +168,16 @@ def get_match_ai(db: Session, match_id: int, allow_generate: bool = True) -> dic
     return _response(row, a.payload)
 
 
-def pregenerate(db: Session, hours: int = 36, limit: int = 12) -> dict:
+def pregenerate(db: Session, hours: int = 36, limit: Optional[int] = None) -> dict:
     """Rédige à l'avance les analyses des matchs portant une Sélection SAM ou un pronostic à cote."""
     if not configured_providers():
         return {"generated": 0, "skipped": "non configuré"}
+    cfg = get_ai_settings(db)
+    if cfg["analyses"] == "off":
+        return {"generated": 0, "skipped": "désactivé"}
+    limit = int(cfg["pregenerate_limit"]) if limit is None else limit
+    if limit <= 0:
+        return {"generated": 0, "skipped": "préparation désactivée"}
     now = utcnow()
     ids = db.scalars(select(Prediction.match_id).join(Match, Prediction.match_id == Match.id).where(
         (Prediction.featured.is_(True)) | (Prediction.value_pick.is_(True)),
@@ -151,13 +185,13 @@ def pregenerate(db: Session, hours: int = 36, limit: int = 12) -> dict:
         .order_by(Match.kickoff)).all()
     done, errors = 0, 0
     for mid in list(dict.fromkeys(ids)):
-        if done >= limit or usage_today(db) >= get_settings().ai_daily_budget * 0.6:
+        if done >= limit or usage_today(db) >= _budget(db) * 0.6:
             break  # garder une marge pour les demandes des membres
         row = db.scalar(select(AiAnalysis).where(AiAnalysis.match_id == mid))
         m = db.get(Match, mid)
         if row is not None and _fresh(row, m):
             continue
-        res = get_match_ai(db, mid)
+        res = get_match_ai(db, mid, internal=True)
         if res["status"] == "ok":
             done += 1
         else:
@@ -200,18 +234,23 @@ def _count_member(db: Session, member: str) -> None:
 
 
 def ask_assistant(db: Session, question: str, history: list[dict], member: Optional[str],
-                  match_id: Optional[int] = None) -> dict:
+                  match_id: Optional[int] = None, email: Optional[str] = None) -> dict:
     from ..ai.assistant import SYSTEM, TOOLS, Toolbox, check_answer, references
     from ..ai.providers import chat_with_tools
 
-    s = get_settings()
+    cfg = get_ai_settings(db)
     if not configured_providers():
         return {"status": "not_configured", "message": "L'assistant IA n'est pas encore activé sur ce site"}
+    if cfg["assistant"] == "off":
+        return {"status": "disabled", "message": "L'assistant IA est désactivé pour le moment."}
+    if not member_allowed(cfg, email):
+        return {"status": "forbidden", "message": "L'assistant IA est réservé aux membres autorisés par l'administrateur."}
     who = member or "anonyme"
-    if _member_usage(db, who) >= s.assistant_member_daily:
-        return {"status": "quota", "message": f"Limite de {s.assistant_member_daily} questions par jour atteinte : "
-                                              "revenez demain."}
-    if usage_today(db) >= s.ai_daily_budget:
+    daily = int(cfg["member_daily"])
+    if _member_usage(db, who) >= daily:
+        return {"status": "quota", "message": (f"Limite de {daily} questions par jour atteinte : revenez demain."
+                                               if daily else "L'assistant IA est suspendu pour le moment.")}
+    if usage_today(db) >= int(cfg["daily_budget"]):
         return {"status": "quota", "message": "L'assistant a atteint son quota du jour : revenez demain."}
     _count_member(db, who)
 
@@ -228,12 +267,12 @@ def ask_assistant(db: Session, question: str, history: list[dict], member: Optio
     hist.append({"role": "user", "text": q})
 
     def on_call() -> None:
-        if usage_today(db) >= s.ai_daily_budget:
+        if usage_today(db) >= int(cfg["daily_budget"]):
             raise AIError("Quota quotidien de l'IA atteint : revenez demain")
-        _count_call(db)
+        _count_call(db, "assistant")
 
     try:
-        text, prov = chat_with_tools(SYSTEM, hist, TOOLS, box.run, on_call, max_steps=s.assistant_max_steps)
+        text, prov = chat_with_tools(SYSTEM, hist, TOOLS, box.run, on_call, max_steps=int(cfg["max_steps"]))
     except AIError as exc:
         db.rollback()
         return {"status": "error", "message": str(exc), "retryable": exc.retryable}
@@ -246,4 +285,4 @@ def ask_assistant(db: Session, question: str, history: list[dict], member: Optio
     refs = references(clean, box)
     return {"status": "ok", "answer": clean, "combos": refs["combos"], "matches": refs["matches"],
             "provider": prov.label, "model": prov.model, "removed": len(dropped),
-            "remaining_today": max(0, s.assistant_member_daily - _member_usage(db, who))}
+            "remaining_today": max(0, daily - _member_usage(db, who))}

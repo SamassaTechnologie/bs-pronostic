@@ -12,6 +12,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from ..ai.providers import provider_info as ai_provider_info
+from ..services.ai_settings import public_flags as ai_public_flags
 from ..config import get_settings
 from ..engine.combos import Leg, MatchModel, evaluate_combo, generate_combos
 from ..engine.value import naive_equivalent, reference_odds, short_equivalent, target_combos
@@ -148,8 +149,8 @@ def meta(db: Session = Depends(get_db)):
                         "divisions": cal.get("divisions"), "tiers": oos.get("tiers"),
                         "market_benchmark": oos.get("market_benchmark")},
         "default_timezone": get_settings().default_timezone,
-        "ai": {k: v for k, v in ai_provider_info().items()
-               if k in ("configured", "provider", "model")},
+        "ai": {**{k: v for k, v in ai_provider_info().items() if k in ("configured", "provider", "model")},
+               **ai_public_flags(db)},
         "disclaimer": DISCLAIMER,
     }
 
