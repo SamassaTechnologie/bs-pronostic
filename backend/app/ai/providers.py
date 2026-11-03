@@ -182,6 +182,43 @@ def configured_providers() -> list[AIProvider]:
     return [p for p in order if p is not None]
 
 
+def web_brief(prompt: str) -> dict:
+    """Recherche Google via Gemini (« Grounding with Google Search »). Renvoie {"text", "sources", "queries"} ;
+    le texte n'est retenu que s'il est appuyé sur au moins une source web (jamais de contenu non sourcé)."""
+    s = get_settings()
+    if not s.gemini_api_key:
+        raise AIError("Recherche web indisponible : clé Gemini absente")
+    p = GeminiProvider(s.gemini_api_key, s.gemini_model, s.gemini_base_url, s.ai_timeout)
+    body = {"contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "tools": [{"google_search": {}}],
+            "generationConfig": {"temperature": 0.2, "maxOutputTokens": 4096}}
+    p._throttle.wait()
+    try:
+        r = httpx.post(f"{p._base}/models/{p.model}:generateContent", json=body, timeout=s.ai_timeout,
+                       headers={"x-goog-api-key": p._key, "Content-Type": "application/json"})
+    except httpx.HTTPError as exc:
+        raise AIError(f"Recherche web injoignable ({exc.__class__.__name__})", retryable=True) from exc
+    if r.status_code != 200:
+        raise _http_error("Recherche Google (Gemini)", r)
+    data = r.json()
+    cands = data.get("candidates") or []
+    if not cands:
+        raise AIError("La recherche web n'a renvoyé aucune réponse", retryable=True)
+    c = cands[0]
+    text = "".join(x.get("text", "") for x in ((c.get("content") or {}).get("parts") or []) if not x.get("thought")).strip()
+    meta = c.get("groundingMetadata") or {}
+    sources, seen = [], set()
+    for ch in meta.get("groundingChunks") or []:
+        web = ch.get("web") or {}
+        uri, title = web.get("uri"), (web.get("title") or "").strip()
+        if uri and (title or uri) not in seen:
+            seen.add(title or uri)
+            sources.append({"title": title or "Source web", "uri": uri})
+    if not sources:
+        text = ""  # aucune source : rien n'est retenu
+    return {"text": text[:2500], "sources": sources[:6], "queries": (meta.get("webSearchQueries") or [])[:4]}
+
+
 def provider_info() -> dict:
     provs = configured_providers()
     return {"configured": bool(provs), "provider": provs[0].label if provs else None,

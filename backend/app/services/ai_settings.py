@@ -24,6 +24,7 @@ BOUNDS = {
     "member_daily": (0, 100),
     "pregenerate_limit": (0, 40),
     "max_steps": (1, 6),
+    "web_daily": (0, 500),
 }
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -32,7 +33,8 @@ def defaults() -> dict:
     s = get_settings()
     return {"analyses": "auto", "assistant": "tous", "daily_budget": s.ai_daily_budget,
             "member_daily": s.assistant_member_daily, "pregenerate_limit": 12,
-            "max_steps": s.assistant_max_steps, "allowed_emails": []}
+            "max_steps": s.assistant_max_steps, "allowed_emails": [],
+            "web_search": True, "web_daily": 40}
 
 
 def get_ai_settings(db: Session) -> dict:
@@ -54,6 +56,8 @@ def update_ai_settings(db: Session, changes: dict) -> dict:
         elif k == "assistant":
             if v not in MODES_ASSISTANT:
                 raise ValueError("Mode de l'assistant invalide")
+        elif k == "web_search":
+            v = v in (True, 1, "1", "true", "on", "oui")
         elif k == "allowed_emails":
             items = v if isinstance(v, list) else re.split(r"[\s,;]+", str(v or ""))
             emails = sorted({e.strip().lower() for e in items if e and e.strip()})

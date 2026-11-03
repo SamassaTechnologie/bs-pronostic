@@ -765,3 +765,20 @@ def test_live_board_with_extended_pick(populated, client):
         p = Prediction(match_id=match.id, market_key="e:EH-22", market_label="test", probability=0.6)
         assert isinstance(_pick_state(p, match, {"home": 1, "away": 0}), str)
     assert client.get("/api/live").status_code == 200
+
+
+def test_ai_web_news_rules():
+    """Recherche web : faits repris sans chiffre ; un chiffre venu du web n'est jamais validé."""
+    from app.ai.analyst import check_output, sanitize
+    dossier = {"match": {"domicile": "A", "exterieur": "B"}, "marches": [{"cle": "1X", "probabilite_pct": 72}],
+               "actualites_web": {"texte": "Selon la presse, 3 joueurs de A sont blessés.", "sources": ["Journal"]}}
+    out = {"titre": "A – B", "resume": "Match serré.", "contexte": ["A reçoit B."], "analyse_domicile": "Solide.",
+           "analyse_exterieur": "Irrégulier.", "confrontations": "Non disponible.", "scenario": "Match fermé.",
+           "pronostic_principal": {"cle": "1X", "argument": "Probabilité de 72 %."}, "alternatives": [],
+           "points_de_vigilance": ["Absences signalées chez A."],
+           "actualites": ["Selon la presse, le gardien titulaire de A est blessé.",
+                          "Selon la presse, 3 joueurs de A sont absents."]}
+    problems = check_output(out, dossier, {"1X"})
+    assert any("3" in p for p in problems)  # le chiffre du web est signalé
+    content, removed = sanitize(out, dossier, {"1X"})
+    assert content["actualites"] == ["Selon la presse, le gardien titulaire de A est blessé."] and removed == 1

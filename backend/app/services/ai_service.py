@@ -82,9 +82,37 @@ def _fresh(row: AiAnalysis, m: Match) -> bool:
 
 
 def _response(row: AiAnalysis, payload: dict) -> dict:
+    web = (row.content or {}).get("_web") or {}
     return {"status": "ok", "provider": row.provider, "model": row.model, "created_at": row.created_at.isoformat(),
             "based_on": row.based_on.isoformat() if row.based_on else None, "removed_sentences": row.removed,
-            "analysis": enrich_for_display(row.content, payload)}
+            "analysis": enrich_for_display(row.content, payload),
+            "web_sources": web.get("sources") or [], "web_at": web.get("at")}
+
+
+def _web_context(db: Session, dossier: dict) -> Optional[dict]:
+    """Recherche Google récente sur le match (si autorisée et dans le quota du jour) ; None sinon."""
+    from ..ai.providers import web_brief
+    cfg = get_ai_settings(db)
+    if not cfg.get("web_search") or _usage(db, f"{USAGE_KEY}-web") >= int(cfg.get("web_daily", 0)):
+        return None
+    if usage_today(db) >= _budget(db):
+        return None
+    m = dossier.get("match") or {}
+    prompt = (f"Recherche les informations les plus récentes (7 derniers jours) sur le match de football "
+              f"{m.get('domicile')} – {m.get('exterieur')} ({m.get('competition')}, {m.get('pays')}, le {m.get('date_utc')}). "
+              "Donne en français 5 puces au maximum, factuelles et sourcées : joueurs blessés, suspendus ou incertains, "
+              "retours de blessure, changement d'entraîneur, enjeu ou contexte particulier. Aucun pronostic, aucune "
+              "cote, aucune statistique. Si rien de fiable et récent n'est trouvé, réponds seulement : "
+              "« Aucune information récente fiable. »")
+    try:
+        _count_call(db, "web")
+        res = web_brief(prompt)
+    except AIError as exc:
+        log.info("Recherche web impossible : %s", exc)
+        return None
+    if not res["sources"] or not res["text"] or "Aucune information récente fiable" in res["text"]:
+        return None
+    return res
 
 
 def generate(db: Session, m: Match, a: Analysis) -> AiAnalysis:
@@ -97,6 +125,9 @@ def generate(db: Session, m: Match, a: Analysis) -> AiAnalysis:
     value_keys, featured_keys = _keys(db, m.id)
     dossier = build_dossier(payload.get("match") or match_summary(m), payload, insights, value_keys, featured_keys)
     market_keys = {r["cle"] for r in dossier["marches"]}
+    web = _web_context(db, dossier)
+    if web:
+        dossier["actualites_web"] = {"texte": web["text"], "sources": [x["title"] for x in web["sources"]]}
     feedback: Optional[list[str]] = None
     out, prov = None, None
     for _ in range(2):
@@ -109,6 +140,10 @@ def generate(db: Session, m: Match, a: Analysis) -> AiAnalysis:
             break
         log.info("Analyse IA du match %s refusée : %s", m.id, feedback[:3])
     content, removed = sanitize(out, dossier, market_keys)
+    if web and content.get("actualites"):
+        content["_web"] = {"sources": web["sources"], "queries": web["queries"], "at": utcnow().isoformat()}
+    else:
+        content["actualites"] = []  # jamais d'« actualité » sans source
     if not content.get("resume") or not content.get("pronostic_principal"):
         raise AIError("L'analyse IA n'a pas passé les contrôles de fiabilité", retryable=True)
     row = db.scalar(select(AiAnalysis).where(AiAnalysis.match_id == m.id))

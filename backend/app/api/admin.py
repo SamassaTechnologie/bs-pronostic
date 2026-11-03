@@ -247,6 +247,17 @@ def ai_test(db: Session = Depends(get_db)):
     return {"results": out, "configured": bool(out)}
 
 
+@router.post("/ai/test-web")
+def ai_test_web():
+    """Appel réel et minimal à la recherche Google de Gemini (vérifie que l'offre de la clé l'autorise)."""
+    from ..ai.providers import AIError, web_brief
+    try:
+        r = web_brief("Quel est le dernier résultat du FC Barcelone en championnat ? Réponds en une phrase.")
+    except AIError as exc:
+        return {"ok": False, "error": str(exc)}
+    return {"ok": bool(r["sources"]), "sources": len(r["sources"]), "extrait": r["text"][:160]}
+
+
 @router.delete("/ai/matches/{match_id}")
 def ai_reset(match_id: int, db: Session = Depends(get_db)):
     """Supprime l'analyse IA en cache d'un match (elle sera rédigée à nouveau à la prochaine consultation)."""

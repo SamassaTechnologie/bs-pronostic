@@ -41,6 +41,9 @@ SCHEMA: dict = {
                       "required": ["cle", "argument"]},
         },
         "points_de_vigilance": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 4},
+        "actualites": {"type": "array", "items": {"type": "string"}, "maxItems": 4,
+                       "description": "Faits récents tirés de « actualites_web » (absences, suspensions, contexte) ; "
+                                      "liste vide si le dossier n'en contient pas"},
     },
     "required": ["titre", "resume", "contexte", "analyse_domicile", "analyse_exterieur", "confrontations",
                  "scenario", "pronostic_principal", "alternatives", "points_de_vigilance"],
@@ -61,7 +64,12 @@ Règles absolues :
    préférence parmi « pronostics_sam ». Les alternatives doivent porter sur des marchés différents du principal.
 6. Ton neutre et prudent : aucune garantie de gain, aucune incitation à parier, pas de superlatifs.
 7. Phrases courtes et précises, sans markdown ni émoji. Écris les nombres décimaux avec une virgule (1,85).
-8. Si le dossier signale un match à éviter ou une confiance faible, mets-le en avant dans les points de vigilance."""
+8. Si le dossier signale un match à éviter ou une confiance faible, mets-le en avant dans les points de vigilance.
+9. Exception à la règle 1 : le champ « actualites_web », s'il existe, résume une recherche web récente avec sources.
+   Reprends-en les faits utiles (blessés, suspendus, retours, changement d'entraîneur, enjeu) dans « actualites »
+   en commençant par « Selon la presse, » et, s'ils comptent, dans les points de vigilance. N'en reprends aucun
+   chiffre, ne modifie aucune probabilité et ne change pas le pronostic du moteur à cause de ces informations.
+   Sans « actualites_web », laisse « actualites » vide."""
 
 
 def _pct(p: Optional[float]) -> Optional[int]:
@@ -179,6 +187,11 @@ def _norm(n: str) -> str:
     return n
 
 
+def _stat_only(dossier: dict) -> dict:
+    """Dossier sans la recherche web : un chiffre n'est jamais validé par une source web."""
+    return {k: v for k, v in dossier.items() if k != "actualites_web"} if isinstance(dossier, dict) else dossier
+
+
 def allowed_numbers(dossier: Any) -> set[str]:
     out: set[str] = set()
 
@@ -244,11 +257,15 @@ def check_output(out: dict, dossier: dict, market_keys: set[str]) -> list[str]:
     for f in SCHEMA["required"]:
         if f not in out:
             problems.append(f"champ manquant : {f}")
-    allowed, percents = allowed_numbers(dossier), allowed_percents(dossier)
+    stat = _stat_only(dossier)
+    allowed, percents = allowed_numbers(stat), allowed_percents(stat)
     for txt in iter_texts(out):
         bad = unverified_numbers(txt, allowed, percents)
         if bad:
             problems.append(f"chiffres absents du dossier ({', '.join(sorted(set(bad)))}) dans : « {txt[:90]} »")
+    for x in out.get("actualites") or []:
+        if isinstance(x, str) and re.search(r"\d", x):
+            problems.append(f"chiffre interdit dans une actualité web : « {x[:90]} »")
     pp = out.get("pronostic_principal") or {}
     if pp.get("cle") not in market_keys:
         problems.append(f"pronostic_principal.cle « {pp.get('cle')} » n'est pas une clé de « marches »")
@@ -262,7 +279,7 @@ def iter_texts(out: dict):
     for k in ("titre", "resume", "analyse_domicile", "analyse_exterieur", "confrontations", "scenario"):
         if isinstance(out.get(k), str):
             yield out[k]
-    for k in ("contexte", "points_de_vigilance"):
+    for k in ("contexte", "points_de_vigilance", "actualites"):
         for x in out.get(k) or []:
             if isinstance(x, str):
                 yield x
@@ -273,7 +290,8 @@ def iter_texts(out: dict):
 
 def sanitize(out: dict, dossier: dict, market_keys: set[str]) -> tuple[dict, int]:
     """Retire les phrases aux chiffres invérifiables et les marchés inconnus. Renvoie (contenu, nb retiré)."""
-    allowed, percents = allowed_numbers(dossier), allowed_percents(dossier)
+    stat = _stat_only(dossier)
+    allowed, percents = allowed_numbers(stat), allowed_percents(stat)
     removed = 0
     dropped: list[dict] = []
 
@@ -296,6 +314,14 @@ def sanitize(out: dict, dossier: dict, market_keys: set[str]) -> tuple[dict, int
         res[k] = clean(out.get(k))
     for k in ("contexte", "points_de_vigilance"):
         res[k] = [c for c in (clean(x) for x in (out.get(k) or [])) if c]
+    news = []
+    for x in out.get("actualites") or []:  # actualités web : aucun chiffre accepté
+        if isinstance(x, str) and x.strip() and not re.search(r"\d", x):
+            news.append(x.strip())
+        elif isinstance(x, str) and x.strip():
+            removed += 1
+            dropped.append({"phrase": x, "chiffres": ["chiffre issu du web"]})
+    res["actualites"] = news[:4]
     pp = out.get("pronostic_principal") or {}
     res["pronostic_principal"] = ({"cle": pp["cle"], "argument": clean(pp.get("argument"))}
                                   if pp.get("cle") in market_keys else None)

@@ -45,6 +45,7 @@ type AiStatus = {
 type AiCfg = {
   analyses: "auto" | "preparees" | "off"; assistant: "tous" | "liste" | "off";
   daily_budget: number; member_daily: number; pregenerate_limit: number; max_steps: number; allowed_emails: string[];
+  web_search?: boolean; web_daily?: number;
 };
 
 export function AdminPanel() {
@@ -133,6 +134,7 @@ export function AdminPanel() {
       daily_budget: Number(form.get("daily_budget")), member_daily: Number(form.get("member_daily")),
       pregenerate_limit: Number(form.get("pregenerate_limit")), max_steps: Number(form.get("max_steps")),
       allowed_emails: String(form.get("allowed_emails") || ""),
+      web_search: form.get("web_search") === "on", web_daily: Number(form.get("web_daily") ?? 40),
     };
     try {
       await api<AiCfg>("ai/settings", { method: "PUT", body: JSON.stringify(body) });
@@ -287,6 +289,17 @@ export function AdminPanel() {
                 <span className="text-xs font-semibold text-steel">Membres autorisés (adresses e-mail, une par ligne) : utilisé si l&apos;assistant est « réservé »</span>
                 <textarea name="allowed_emails" rows={3} defaultValue={ai.settings.allowed_emails.join("\n")} placeholder="exemple@gmail.com"
                   className="mt-1 w-full rounded-lg border border-line bg-white px-2 py-2 font-mono text-xs" />
+              </label>
+              <label className="flex items-start gap-2">
+                <input type="checkbox" name="web_search" defaultChecked={ai.settings.web_search !== false} className="mt-1 h-4 w-4" />
+                <span>
+                  <span className="block text-sm font-semibold">Recherche Google avant chaque analyse IA</span>
+                  <span className="block text-xs text-steel">Blessés, suspendus, contexte récent, avec liens des sources. Ne modifie jamais les probabilités.</span>
+                </span>
+              </label>
+              <label className="block">
+                <span className="text-xs font-semibold text-steel">Recherches web max. par jour</span>
+                <input name="web_daily" type="number" min={0} max={500} defaultValue={ai.settings.web_daily ?? 40} className="mt-1 w-full rounded-lg border border-line bg-white px-2 py-2" />
               </label>
               <div className="grid grid-cols-2 gap-3">
                 {([

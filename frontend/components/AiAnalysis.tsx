@@ -10,10 +10,11 @@ type AiPick = {
 type AiContent = {
   titre: string; resume: string; contexte: string[]; analyse_domicile: string; analyse_exterieur: string;
   confrontations: string; scenario: string; pronostic_principal: AiPick | null; alternatives: AiPick[];
-  points_de_vigilance: string[];
+  points_de_vigilance: string[]; actualites?: string[];
 };
 type AiResponse =
-  | { status: "ok"; provider: string; model: string; created_at: string; removed_sentences: number; stale?: boolean; analysis: AiContent }
+  | { status: "ok"; provider: string; model: string; created_at: string; removed_sentences: number; stale?: boolean; analysis: AiContent;
+      web_sources?: { title: string; uri: string }[]; web_at?: string | null }
   | { status: "not_configured" | "insufficient" | "unavailable" | "error" | "pending" | "disabled"; message: string; retryable?: boolean };
 
 function Block({ title, children }: { title: string; children: React.ReactNode }) {
@@ -117,6 +118,23 @@ export function AiAnalysis({ matchId, home, away, tz, thresholds }: { matchId: n
         </div>
       )}
 
+      {(a.actualites?.length ?? 0) > 0 && (res.web_sources?.length ?? 0) > 0 && (
+        <Block title="Actualités du match (recherche web)">
+          <ul className="space-y-1">
+            {a.actualites!.map((c) => (
+              <li key={c} className="flex gap-2"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-brick" aria-hidden />{c}</li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-steel">
+            Sources :{" "}
+            {res.web_sources!.map((s, i) => (
+              <span key={s.uri}>{i > 0 && " · "}<a href={s.uri} target="_blank" rel="noreferrer nofollow" className="text-sky underline">{s.title}</a></span>
+            ))}
+            {res.web_at ? ` (recherche du ${dateTime(res.web_at, tz)})` : ""}. Informations de presse non vérifiées par SAM : elles ne modifient pas les probabilités.
+          </p>
+        </Block>
+      )}
+
       {a.contexte.length > 0 && (
         <Block title="Contexte">
           <ul className="space-y-1">
@@ -143,7 +161,7 @@ export function AiAnalysis({ matchId, home, away, tz, thresholds }: { matchId: n
       )}
 
       <footer className="border-t border-line bg-mist/60 px-4 py-3 text-[11px] leading-relaxed text-steel">
-        Rédigée par {res.provider} ({res.model}) le {dateTime(res.created_at, tz)}, uniquement à partir des données SAM.
+        Rédigée par {res.provider} ({res.model}) le {dateTime(res.created_at, tz)}, à partir des données SAM{(res.web_sources?.length ?? 0) > 0 ? " et d'une recherche web sourcée (actualités uniquement)" : ""}.
         L&apos;IA ne calcule aucune probabilité : les pourcentages et cotes viennent du moteur statistique, et chaque chiffre
         du texte est contrôlé (il doit figurer dans les données SAM, sinon la phrase est retirée).
         {res.stale ? " Analyse précédente affichée : la mise à jour n'a pas pu être rédigée." : ""} Aucune garantie de gain.
