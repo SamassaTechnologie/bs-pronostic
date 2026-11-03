@@ -182,9 +182,51 @@ def configured_providers() -> list[AIProvider]:
     return [p for p in order if p is not None]
 
 
+def _groq_web(prompt: str) -> dict:
+    """Recherche web via Groq Compound (outil de recherche intégré, offre gratuite)."""
+    s = get_settings()
+    if not s.groq_api_key:
+        raise AIError("Recherche web Groq indisponible : clé absente")
+    body = {"model": s.groq_search_model, "temperature": 0.2, "max_tokens": 1500,
+            "messages": [{"role": "user", "content": prompt}]}
+    try:
+        r = httpx.post(f"{s.groq_base_url.rstrip('/')}/chat/completions", json=body, timeout=s.ai_timeout,
+                       headers={"Authorization": f"Bearer {s.groq_api_key}", "Content-Type": "application/json"})
+    except httpx.HTTPError as exc:
+        raise AIError(f"Recherche web Groq injoignable ({exc.__class__.__name__})", retryable=True) from exc
+    if r.status_code != 200:
+        raise _http_error("Recherche web (Groq)", r)
+    msg = ((r.json().get("choices") or [{}])[0].get("message") or {})
+    text = (msg.get("content") or "").strip()
+    sources, seen, queries = [], set(), []
+    for t in msg.get("executed_tools") or []:
+        args = t.get("arguments")
+        if isinstance(args, str) and args:
+            queries.append(args[:120])
+        for res in ((t.get("search_results") or {}).get("results") or []):
+            url, title = res.get("url"), (res.get("title") or "").strip()
+            if url and url not in seen:
+                seen.add(url)
+                sources.append({"title": title or url, "uri": url})
+    if not sources:
+        text = ""
+    return {"text": text[:2500], "sources": sources[:6], "queries": queries[:4]}
+
+
 def web_brief(prompt: str) -> dict:
-    """Recherche Google via Gemini (« Grounding with Google Search »). Renvoie {"text", "sources", "queries"} ;
-    le texte n'est retenu que s'il est appuyé sur au moins une source web (jamais de contenu non sourcé)."""
+    """Recherche web : Google via Gemini si l'offre de la clé l'autorise, sinon Groq Compound.
+    Renvoie {"text", "sources", "queries"} ; le texte n'est retenu que s'il est appuyé sur au moins une source."""
+    s = get_settings()
+    try:
+        return _gemini_web(prompt)
+    except AIError as exc:
+        if not s.groq_api_key:
+            raise
+        log.info("Recherche Gemini indisponible (%s) : relais Groq", exc)
+    return _groq_web(prompt)
+
+
+def _gemini_web(prompt: str) -> dict:
     s = get_settings()
     if not s.gemini_api_key:
         raise AIError("Recherche web indisponible : clé Gemini absente")
