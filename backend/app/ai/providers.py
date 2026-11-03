@@ -93,7 +93,7 @@ def _http_error(provider: str, r: httpx.Response) -> AIError:
         msg = None
     msg = (msg or r.text or "")[:200]
     if r.status_code == 429:
-        return AIError(f"{provider} : quota gratuit momentanément atteint, réessayez plus tard", retryable=True)
+        return AIError(f"{provider} : quota gratuit momentanément atteint, réessayez plus tard ({msg[:160]})", retryable=True)
     if r.status_code in (401, 403):
         return AIError(f"{provider} : clé API refusée ({msg})")
     if r.status_code >= 500:
