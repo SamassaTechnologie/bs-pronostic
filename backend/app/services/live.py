@@ -206,7 +206,8 @@ def match_live_state(db: Session, m: Match) -> dict:
     now = utcnow()
     if m.status == "FINISHED":
         return {"state": "finished", "label": "Terminé", "home": m.home_goals, "away": m.away_goals,
-                "ht_home": m.ht_home_goals, "ht_away": m.ht_away_goals, "minute": None, "covered": True}
+                "ht_home": m.ht_home_goals, "ht_away": m.ht_away_goals, "minute": None, "covered": True,
+                "details": m.details}
     started = m.kickoff <= now <= m.kickoff + timedelta(minutes=150)
     live, error, refreshed = _live_items(db) if started else ({}, None, None)
     lv = live.get(m.id)
@@ -215,10 +216,11 @@ def match_live_state(db: Session, m: Match) -> dict:
         minute = f"{lv['minute']}'" if lv.get("minute") else estimated_minute(m.kickoff, now, paused)
         return {"state": "live", "label": "Mi-temps" if paused else "En cours", "home": lv.get("home"),
                 "away": lv.get("away"), "ht_home": lv.get("ht_home"), "ht_away": lv.get("ht_away"),
-                "minute": minute, "minute_estimated": not lv.get("minute"), "covered": True, "refreshed_at": refreshed}
+                "minute": minute, "minute_estimated": not lv.get("minute"), "covered": True, "refreshed_at": refreshed,
+                "details": m.details}
     if started:
         return {"state": "live", "label": "En cours", "home": None, "away": None, "minute": estimated_minute(m.kickoff, now),
-                "minute_estimated": True, "covered": False, "refreshed_at": refreshed,
+                "minute_estimated": True, "covered": False, "refreshed_at": refreshed, "details": m.details,
                 "note": "Score en direct non disponible pour ce championnat (source gratuite)" if not error else error}
     if m.status in ("POSTPONED", "CANCELLED"):
         return {"state": "postponed", "label": "Reporté" if m.status == "POSTPONED" else "Annulé", "covered": False}

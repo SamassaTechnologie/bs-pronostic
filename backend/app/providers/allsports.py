@@ -176,3 +176,46 @@ class AllSports(Provider):
             if "Shots On Goal" in st:
                 rec.home_sot, rec.away_sot = st["Shots On Goal"]
         return rec
+
+
+STAT_LABELS = (  # (type AllSportsAPI, libellé, pourcentage)
+    ("Ball Possession", "Possession", True), ("Shots Total", "Tirs", False), ("Shots On Goal", "Tirs cadrés", False),
+    ("Corners", "Corners", False), ("Dangerous Attacks", "Attaques dangereuses", False), ("Fouls", "Fautes", False),
+    ("Offsides", "Hors-jeu", False), ("Saves", "Arrêts", False), ("Yellow Cards", "Cartons jaunes", False),
+    ("Red Cards", "Cartons rouges", False),
+)
+
+
+def _minute_key(t: str) -> tuple:
+    m = re.match(r"^(\d+)(?:\+(\d+))?", str(t or ""))
+    return (int(m.group(1)), int(m.group(2) or 0)) if m else (999, 0)
+
+
+def details_of(x: dict) -> Optional[dict]:
+    """Chronologie (buts, penalties, contre son camp, cartons) et statistiques principales d'un match, telles que
+    publiées par AllSportsAPI. None si la source ne donne rien."""
+    events = []
+    for g in x.get("goalscorers") or []:
+        side = "home" if g.get("home_scorer") else "away" if g.get("away_scorer") else None
+        if side is None:
+            continue
+        info = (g.get("info") or "").lower()
+        kind = "own_goal" if "own" in info else "penalty" if "pen" in info else "goal"
+        events.append({"minute": str(g.get("time") or "").strip(), "type": kind, "side": side,
+                       "player": (g.get(f"{side}_scorer") or "").strip(), "assist": (g.get(f"{side}_assist") or "").strip(),
+                       "score": (g.get("score") or "").replace(" ", "")})
+    for c in x.get("cards") or []:
+        side = "home" if c.get("home_fault") else "away" if c.get("away_fault") else None
+        card = (c.get("card") or "").lower()
+        if side is None or "card" not in card:
+            continue
+        kind = "second_yellow" if "yellow red" in card or "second" in card else "red" if "red" in card else "yellow"
+        events.append({"minute": str(c.get("time") or "").strip(), "type": kind, "side": side,
+                       "player": (c.get(f"{side}_fault") or "").strip()})
+    events.sort(key=lambda e: _minute_key(e["minute"]))
+    raw = stats_of(x)
+    stats = [{"label": label, "home": raw[t][0], "away": raw[t][1], "pct": pct}
+             for t, label, pct in STAT_LABELS if t in raw]
+    if not events and not stats:
+        return None
+    return {"events": events[:40], "stats": stats, "source": "AllSportsAPI"}

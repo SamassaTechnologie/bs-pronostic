@@ -1,6 +1,6 @@
 "use client";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MatchSummary } from "@/lib/types";
 import { flag } from "@/lib/flags";
 import { pct, time } from "@/lib/format";
@@ -46,13 +46,29 @@ export function LiveBoard({ tz }: { tz: string }) {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab | null>(null);
   const [onlyPicks, setOnlyPicks] = useState(false);
+  const prevGoals = useRef<Map<number, number>>(new Map());
+  const [flash, setFlash] = useState<Set<number>>(new Set());
 
   const load = useCallback(async () => {
     try {
       const r = await fetch(`/api/proxy/live?tz=${encodeURIComponent(tz)}`, { cache: "no-store" });
       const d = await r.json().catch(() => ({ detail: "Service momentanément indisponible, réessayez dans un instant." }));
       if (!r.ok) throw new Error(d.detail || "Erreur");
-      setBoard({ live: d.live ?? d.items ?? [], upcoming: d.upcoming ?? [], finished: d.finished ?? [], refreshed_at: d.refreshed_at, error: d.error });
+      const liveItems: Item[] = d.live ?? d.items ?? [];
+      // « BUT ! » : un score qui augmente depuis la dernière actualisation s'illumine quelques secondes
+      const scored = new Set<number>();
+      for (const it of liveItems) {
+        if (!it.live || it.live.home === null || it.live.away === null) continue;
+        const total = (it.live.home ?? 0) + (it.live.away ?? 0);
+        const before = prevGoals.current.get(it.match.id);
+        if (before !== undefined && total > before) scored.add(it.match.id);
+        prevGoals.current.set(it.match.id, total);
+      }
+      if (scored.size) {
+        setFlash(scored);
+        setTimeout(() => setFlash(new Set()), 9000);
+      }
+      setBoard({ live: liveItems, upcoming: d.upcoming ?? [], finished: d.finished ?? [], refreshed_at: d.refreshed_at, error: d.error });
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erreur");
@@ -130,8 +146,11 @@ export function LiveBoard({ tz }: { tz: string }) {
                     </div>
                     <div className="mt-1 grid grid-cols-[1fr_auto_1fr] items-center gap-3">
                       <span className="truncate text-[15px] font-semibold">{it.match.home.name}</span>
-                      <span className={`rounded-lg px-2.5 py-0.5 font-display text-lg font-bold ${current === "upcoming" ? "bg-mist text-steel" : "bg-night text-white"}`}>
+                      <span className={`relative rounded-lg px-2.5 py-0.5 font-display text-lg font-bold ${current === "upcoming" ? "bg-mist text-steel" : flash.has(it.match.id) ? "animate-pulse bg-pitch text-white ring-2 ring-pitch/40" : "bg-night text-white"}`}>
                         <Score it={it} tab={current} />
+                        {flash.has(it.match.id) && current === "live" && (
+                          <span className="absolute -top-3 left-1/2 -translate-x-1/2 rounded bg-pitch px-1.5 text-[10px] font-black tracking-wide text-white">BUT !</span>
+                        )}
                       </span>
                       <span className="truncate text-right text-[15px] font-semibold">{it.match.away.name}</span>
                     </div>

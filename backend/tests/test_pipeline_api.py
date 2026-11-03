@@ -655,7 +655,12 @@ def test_allsports_africa(populated, monkeypatch):
             return odds
         if met == "Livescore":
             return [dict(upcoming[0], event_status="Finished", event_final_result="2 - 1",
-                         event_halftime_result="1 - 0", statistics=[{"type": "Corners", "home": "5", "away": "4"}])]
+                         event_halftime_result="1 - 0", statistics=[{"type": "Corners", "home": "5", "away": "4"},
+                                                                     {"type": "Ball Possession", "home": "55%", "away": "45%"}],
+                         goalscorers=[{"time": "12", "home_scorer": "A. Traoré", "away_scorer": "", "score": "1 - 0", "info": ""},
+                                      {"time": "88", "home_scorer": "", "away_scorer": "B. Keita", "score": "2 - 1",
+                                       "info": "Penalty"}],
+                         cards=[{"time": "45+2", "card": "yellow card", "home_fault": "", "away_fault": "C. Diarra"}])]
         return []
 
     monkeypatch.setattr(AllSports, "_get", fake_get)
@@ -685,6 +690,9 @@ def test_allsports_africa(populated, monkeypatch):
         db.refresh(up)
         assert out["updated"] == 1 and up.status == "FINISHED" and (up.home_goals, up.away_goals, up.ht_home_goals) == (2, 1, 1)
         assert (up.home_corners, up.away_corners) == (5, 4)
+        ev = up.details["events"]
+        assert [e["minute"] for e in ev] == ["12", "45+2", "88"] and ev[2]["type"] == "penalty" and ev[1]["side"] == "away"
+        assert {x["label"]: (x["home"], x["away"]) for x in up.details["stats"]}["Possession"] == (55, 45)
         comp.enabled = False
         db.commit()
 

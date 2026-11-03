@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..models import Competition, Match, Setting, SyncRun, utcnow
-from ..providers.allsports import AllSports, minute_of, status_of, kickoff_of, _pair
+from ..providers.allsports import AllSports, details_of, minute_of, status_of, kickoff_of, _pair
 from ..providers.base import ProviderError
 from ..providers.names import similarity
 
@@ -135,6 +135,9 @@ def _upcoming(db: Session, p: AllSports, comps: list[Competition], now: datetime
                     n += 1
                     m.source_ref = rec.source_ref or m.source_ref
                     by_ref[rec.source_ref] = m
+                    d = details_of(x) if rec.status in ("FINISHED", "LIVE") else None
+                    if d:
+                        m.details = d
             db.commit()
             todo = [m for m in by_ref.values() if m.status == "SCHEDULED" and m.kickoff >= now]
             if not todo:
@@ -207,10 +210,11 @@ def _find(cands: list[Match], x: dict) -> Optional[Match]:
     return None
 
 
-def live_candidates(db: Session, now: datetime, skip_comp_ids: set[int]) -> list[Match]:
-    """Matchs suivis susceptibles d'être en cours (hors compétitions couvertes par football-data.org)."""
+def live_candidates(db: Session, now: datetime, skip_comp_ids: set[int], with_finished: bool = False) -> list[Match]:
+    """Matchs suivis susceptibles d'être en cours (hors compétitions données dans skip_comp_ids)."""
+    statuses = ("SCHEDULED", "LIVE", "FINISHED") if with_finished else ("SCHEDULED", "LIVE")
     cands = db.scalars(select(Match).join(Competition, Match.competition_id == Competition.id).where(
-        Competition.enabled.is_(True), Match.status.in_(("SCHEDULED", "LIVE")),
+        Competition.enabled.is_(True), Match.status.in_(statuses),
         Match.kickoff >= now - timedelta(minutes=170), Match.kickoff <= now + timedelta(minutes=5))).unique().all()
     return [m for m in cands if m.competition_id not in skip_comp_ids]
 
@@ -223,12 +227,13 @@ def live_scores(db: Session, now: datetime, skip_comp_ids: set[int]) -> dict:
     cfg = get_settings()
     if not cfg.allsports_key or not get_provider_flags(db).get("allsports", True):
         return {"ok": False, "live": [], "updated": 0, "error": None}
-    cands = live_candidates(db, now, skip_comp_ids)
-    if not cands:
+    every = live_candidates(db, now, set(), with_finished=True)  # chronologie et statistiques : tous les matchs suivis
+    cands = [m for m in every if m.competition_id not in skip_comp_ids and m.status != "FINISHED"]
+    if not every:
         return {"ok": True, "live": [], "updated": 0, "error": None}
     with _lock:
         if _cache["at"] is not None and time.monotonic() - _cache["at"] < cfg.allsports_live_seconds:
-            ids = {m.id for m in cands}
+            ids = {m.id for m in every}
             return {"ok": _cache["error"] is None, "live": [x for x in _cache["live"] if x["match_id"] in ids],
                     "updated": 0, "error": _cache["error"]}
         _cache["at"] = time.monotonic()
@@ -243,6 +248,11 @@ def live_scores(db: Session, now: datetime, skip_comp_ids: set[int]) -> dict:
         _add_api_usage(db, p.name, p.requests_made)
         live, updated = [], 0
         for x in rows:
+            any_m = _find(every, x)
+            if any_m is not None:
+                d = details_of(x)
+                if d:
+                    any_m.details = d
             m = _find(cands, x)
             if m is None:
                 continue

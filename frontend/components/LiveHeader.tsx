@@ -15,7 +15,71 @@ export type LiveState = {
   minute_estimated?: boolean;
   covered?: boolean;
   note?: string;
+  details?: MatchDetails | null;
 };
+
+type MatchEvent = { minute: string; type: "goal" | "penalty" | "own_goal" | "yellow" | "red" | "second_yellow"; side: "home" | "away"; player: string; assist?: string; score?: string };
+type MatchStat = { label: string; home: number; away: number; pct: boolean };
+export type MatchDetails = { events: MatchEvent[]; stats: MatchStat[]; source?: string };
+
+const EV_LABEL: Record<MatchEvent["type"], string> = {
+  goal: "But", penalty: "But sur penalty", own_goal: "But contre son camp", yellow: "Carton jaune",
+  red: "Carton rouge", second_yellow: "Second carton jaune",
+};
+
+function EvIcon({ t }: { t: MatchEvent["type"] }) {
+  if (t === "yellow") return <span className="inline-block h-3.5 w-2.5 rounded-[2px] bg-[#f5c518]" aria-hidden />;
+  if (t === "red" || t === "second_yellow") return <span className="inline-block h-3.5 w-2.5 rounded-[2px] bg-brick" aria-hidden />;
+  return (
+    <svg viewBox="0 0 24 24" className={`h-4 w-4 ${t === "own_goal" ? "text-brick" : "text-white"}`} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <circle cx="12" cy="12" r="9" /><path d="M12 7.5l3.8 2.8-1.5 4.4H9.7l-1.5-4.4z" />
+    </svg>
+  );
+}
+
+/** Chronologie (buts, cartons) et statistiques du match, à partir de la source de données (jamais estimées). */
+function MatchTimeline({ d }: { d: MatchDetails }) {
+  return (
+    <div className="mt-4 border-t border-white/15 pt-3">
+      {d.events.length > 0 && (
+        <ol className="space-y-1.5" aria-label="Chronologie du match">
+          {d.events.map((e, i) => (
+            <li key={`${e.minute}-${e.player}-${i}`} className={`flex items-center gap-2 text-[13px] ${e.side === "away" ? "flex-row-reverse text-right" : ""}`}>
+              <span className="w-9 shrink-0 text-center font-bold tabular-nums text-white/70">{e.minute}&apos;</span>
+              <EvIcon t={e.type} />
+              <span className="min-w-0 truncate">
+                <span className="font-semibold">{e.player}</span>
+                <span className="text-white/55"> · {EV_LABEL[e.type]}{e.score && (e.type === "goal" || e.type === "penalty" || e.type === "own_goal") ? ` (${e.score.replace("-", "–")})` : ""}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
+      {d.stats.length > 0 && (
+        <div className={`space-y-2 ${d.events.length ? "mt-4" : ""}`} aria-label="Statistiques du match">
+          {d.stats.map((s) => {
+            const tot = s.home + s.away;
+            const hp = tot ? (s.home / tot) * 100 : 50;
+            return (
+              <div key={s.label}>
+                <div className="flex justify-between text-[12px] text-white/80">
+                  <strong className="tabular-nums text-white">{s.home}{s.pct ? " %" : ""}</strong>
+                  <span>{s.label}</span>
+                  <strong className="tabular-nums text-white">{s.away}{s.pct ? " %" : ""}</strong>
+                </div>
+                <div className="mt-1 flex h-1.5 gap-0.5 overflow-hidden rounded-full">
+                  <span className={`h-full rounded-l-full ${s.home >= s.away ? "bg-pitch" : "bg-white/35"}`} style={{ width: `${hp}%` }} />
+                  <span className={`h-full flex-1 rounded-r-full ${s.away > s.home ? "bg-pitch" : "bg-white/35"}`} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <p className="mt-2 text-[10.5px] text-white/45">Chronologie et statistiques : {d.source ?? "source de données"}.</p>
+    </div>
+  );
+}
 
 type Standing = { position: number; points: number } | null | undefined;
 
@@ -87,6 +151,9 @@ export function LiveHeader({ match, initial, tz, homeStanding, awayStanding, chi
         <p className="mt-2 text-center text-[11px] text-white/55">
           {live.note ?? "Minute estimée d'après l'heure du coup d'envoi. Score actualisé chaque minute."}
         </p>
+      )}
+      {live.details && (live.state === "live" || live.state === "finished") && (live.details.events.length > 0 || live.details.stats.length > 0) && (
+        <MatchTimeline d={live.details} />
       )}
       {children}
     </div>

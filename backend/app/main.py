@@ -29,6 +29,7 @@ ADDED_COLUMNS = [
     ("predictions", "featured_at", "TIMESTAMP WITH TIME ZONE"),
     ("predictions", "value_pick", "BOOLEAN NOT NULL DEFAULT FALSE"),
     ("competitions", "allsports_id", "INTEGER"),
+    ("matches", "details", "JSON"),
 ]
 
 

@@ -109,6 +109,7 @@ class Match(Base):
     source_ref: Mapped[Optional[str]] = mapped_column(String(80))
     api_football_fixture_id: Mapped[Optional[int]] = mapped_column(Integer, index=True)
     enriched_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime)  # blessures/cotes API-Football
+    details: Mapped[Optional[dict]] = mapped_column(JSON)  # chronologie (buts, cartons) et statistiques du match
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow, onupdate=utcnow)
 
