@@ -20,6 +20,7 @@ DEFAULT_SETTINGS: dict = {
     "days_ahead": 3,
     "enabled_markets": list(DISPLAY_KEYS),
     "extended_in_picks": True,  # marchés étendus validés par backtest admis dans les pronostics (1 par match)
+    "value_popular_only": True,  # pronostics à cote : grands championnats seulement (données et cotes plus sûres)
     # Sélection SAM du jour : courte liste, critères renforcés
     "featured_min_probability": 0.75,
     "featured_min_confidence": 70,
@@ -28,9 +29,9 @@ DEFAULT_SETTINGS: dict = {
     # Pronostics à cote : probabilité moyenne mais solide, cote plus intéressante
     "value_min_odds": 1.40,
     "value_max_odds": 2.20,
-    "value_min_probability": 0.52,
-    "value_min_confidence": 60,
-    "value_max_per_day": 5,
+    "value_min_probability": 0.60,
+    "value_min_confidence": 70,
+    "value_max_per_day": 3,
     "value_max_disagreement": 0.08,  # écart maximal modèle / marché quand des cotes existent
     # Matchs à éviter
     "avoid_confidence_below": 45,

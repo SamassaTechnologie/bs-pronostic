@@ -195,7 +195,7 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
             day_counts[p.match.kickoff.date()] += 1
         existing = {(p.match_id, p.market_key) for p in db.scalars(
             select(Prediction).where(Prediction.match_id.in_([m.id for _, m, _ in candidates]))).unique()}
-        for score, m, mk in sorted(candidates, key=lambda t: t[0], reverse=True):
+        for score, m, mk in sorted(candidates, key=lambda t: (not is_popular(t[1].competition.code), -t[0])):
             if (m.id, mk["key"]) in existing or m.kickoff <= now + timedelta(minutes=10):
                 continue
             if day_counts[m.kickoff.date()] >= int(s["max_daily_picks"]):
@@ -254,7 +254,7 @@ def select_featured(db: Session, candidates: list, s: dict, now: datetime) -> in
     featured_matches = {p.match_id for p in db.scalars(select(Prediction).where(
         Prediction.featured.is_(True), Prediction.match_id.in_(list(best)))).unique()}
     n = 0
-    for score, m, mk in sorted(best.values(), key=lambda t: t[0], reverse=True):
+    for score, m, mk in sorted(best.values(), key=lambda t: (not is_popular(t[1].competition.code), -t[0])):
         day = m.kickoff.date()
         if m.id in featured_matches or per_day[day] >= int(s["featured_max_per_day"]):
             continue
@@ -274,7 +274,9 @@ def select_featured(db: Session, candidates: list, s: dict, now: datetime) -> in
 
 def select_value_picks(db: Session, candidates: list, s: dict, now: datetime) -> int:
     """Pronostics à cote : au plus N par jour (un par match), cote 1,40-2,20 environ, figés avant le match."""
-    best = {m.id: (score, m, mk) for score, m, mk in candidates if m.kickoff > now + timedelta(minutes=10)}
+    popular_only = bool(s.get("value_popular_only", True))
+    best = {m.id: (score, m, mk) for score, m, mk in candidates if m.kickoff > now + timedelta(minutes=10)
+            and (not popular_only or is_popular(m.competition.code))}
     if not best:
         return 0
     days = {m.kickoff.date() for _, m, _ in best.values()}
@@ -287,7 +289,7 @@ def select_value_picks(db: Session, candidates: list, s: dict, now: datetime) ->
         Prediction.value_pick.is_(True), Prediction.match_id.in_(list(best)))).unique()}
     n = 0
     per_market = Counter()  # diversité : au plus 2 fois le même marché par jour
-    for score, m, mk in sorted(best.values(), key=lambda t: t[0], reverse=True):
+    for score, m, mk in sorted(best.values(), key=lambda t: (not is_popular(t[1].competition.code), -t[0])):
         day = m.kickoff.date()
         if m.id in already or per_day[day] >= int(s["value_max_per_day"]) or per_market[(day, mk["key"])] >= 2:
             continue

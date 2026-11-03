@@ -41,6 +41,9 @@ def update_selection_settings(db: Session, changes: Mapping[str, Any]) -> dict:
                 continue
             current[k] = v
             continue
+        if isinstance(DEFAULT_SETTINGS[k], bool):  # interrupteurs (marchés étendus, cote : grands championnats)
+            current[k] = v in (True, 1, "1", "true", "on", "oui")
+            continue
         lo, hi = BOUNDS[k]
         try:
             num = float(v)
