@@ -261,3 +261,11 @@ Conférence, Liga Portugal, Eredivisie, Ligue des champions CAF. Toujours en tê
 Jouer, Direct, matchs du jour, pronostics : tri stable, le tri choisi s'applique ensuite). Aucune influence sur les
 probabilités ni sur la Sélection SAM. Le ROI n'est publié qu'à partir de 30 pronostics réglés avec une vraie cote
 (`ROI_MIN_SAMPLE`), sinon « données insuffisantes ».
+
+### Recherche web avant l'analyse IA
+`app/ai/providers.py` (`web_brief`) : Google via Gemini si l'offre de la clé l'autorise (refusé sur l'offre gratuite
+en novembre 2026 : « check your plan and billing »), sinon Groq `openai/gpt-oss-120b` avec l'outil `browser_search`.
+Le texte n'est retenu qu'avec au moins une source ; il alimente seulement la section « Actualités du match » (phrases
+« Selon la presse, … », aucun chiffre accepté) et les points de vigilance, avec les liens des sources. Les probabilités
+du moteur ne changent jamais. Réglages : `web_search`, `web_daily` (40 par défaut) dans Administration → Analyse IA ;
+test : `POST /api/admin/ai/test-web`.

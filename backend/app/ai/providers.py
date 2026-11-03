@@ -223,13 +223,19 @@ def web_brief(prompt: str) -> dict:
     """Recherche web : Google via Gemini si l'offre de la clé l'autorise, sinon Groq Compound.
     Renvoie {"text", "sources", "queries"} ; le texte n'est retenu que s'il est appuyé sur au moins une source."""
     s = get_settings()
-    try:
-        return _gemini_web(prompt)
-    except AIError as exc:
-        if not s.groq_api_key:
-            raise
-        log.info("Recherche Gemini indisponible (%s) : relais Groq", exc)
+    if time.monotonic() >= _WEB_STATE["gemini_blocked_until"]:
+        try:
+            return _gemini_web(prompt)
+        except AIError as exc:
+            if not s.groq_api_key:
+                raise
+            if "billing" in str(exc).lower() or "quota" in str(exc).lower():
+                _WEB_STATE["gemini_blocked_until"] = time.monotonic() + 6 * 3600  # offre sans recherche : relais direct
+            log.info("Recherche Gemini indisponible (%s) : relais Groq", exc)
     return _groq_web(prompt)
+
+
+_WEB_STATE = {"gemini_blocked_until": 0.0}
 
 
 def _gemini_web(prompt: str) -> dict:
