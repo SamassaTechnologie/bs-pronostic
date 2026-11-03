@@ -187,8 +187,9 @@ def _groq_web(prompt: str) -> dict:
     s = get_settings()
     if not s.groq_api_key:
         raise AIError("Recherche web Groq indisponible : clé absente")
-    body = {"model": s.groq_search_model, "temperature": 0.2, "max_tokens": 1500,
-            "messages": [{"role": "user", "content": prompt}]}
+    body = {"model": s.groq_search_model, "temperature": 0.2, "max_tokens": 2500,
+            "messages": [{"role": "user", "content": prompt}], "tools": [{"type": "browser_search"}],
+            "tool_choice": "required"}
     try:
         r = httpx.post(f"{s.groq_base_url.rstrip('/')}/chat/completions", json=body, timeout=s.ai_timeout,
                        headers={"Authorization": f"Bearer {s.groq_api_key}", "Content-Type": "application/json"})
@@ -199,15 +200,19 @@ def _groq_web(prompt: str) -> dict:
     msg = ((r.json().get("choices") or [{}])[0].get("message") or {})
     text = (msg.get("content") or "").strip()
     sources, seen, queries = [], set(), []
+    import re as _re
     for t in msg.get("executed_tools") or []:
         args = t.get("arguments")
         if isinstance(args, str) and args:
             queries.append(args[:120])
-        for res in ((t.get("search_results") or {}).get("results") or []):
+        found = list(((t.get("search_results") or {}).get("results") or []))
+        if not found and isinstance(t.get("output"), str):  # sortie brute du navigateur : liens cités
+            found = [{"url": u, "title": ""} for u in _re.findall(r"https?://[^\s\)\]\"'<>]+", t["output"])]
+        for res in found:
             url, title = res.get("url"), (res.get("title") or "").strip()
-            if url and url not in seen:
+            if url and url not in seen and "groq.com" not in url:
                 seen.add(url)
-                sources.append({"title": title or url, "uri": url})
+                sources.append({"title": title or url.split("/")[2], "uri": url})
     if not sources:
         text = ""
     return {"text": text[:2500], "sources": sources[:6], "queries": queries[:4]}
