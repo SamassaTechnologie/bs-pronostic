@@ -123,10 +123,19 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
     stats = Counter()
     candidates: list[tuple[float, Match, dict]] = []
     value_cands: list[tuple[float, Match, dict]] = []
+    from . import cup_pool
+    pooling = cup_pool.enabled(db)
     for comp_id, ms in by_comp.items():
         since = now - timedelta(days=params.window_days + 30)
-        rows = db.scalars(select(Match).where(Match.competition_id == comp_id, Match.status == "FINISHED",
-                                              Match.kickoff >= since, Match.kickoff < now)).unique().all()
+        comp = ms[0].competition
+        if pooling and cup_pool.is_cup(comp):
+            # Coupe internationale : matchs de la coupe + championnats des clubs engagés (forces comparables)
+            cup_rows, rows = cup_pool.pooled_matches(db, comp, since, now)
+            table_data = [match_to_data(r) for r in cup_rows]
+        else:
+            rows = db.scalars(select(Match).where(Match.competition_id == comp_id, Match.status == "FINISHED",
+                                                  Match.kickoff >= since, Match.kickoff < now)).unique().all()
+            table_data = None
         data = [match_to_data(r) for r in rows]
         try:
             lm = fit_league_models(comp_id, data, now, params)
@@ -138,7 +147,7 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
         for m in ms:
             season_rows = season_tables.get(m.season)
             if season_rows is None:
-                season_rows = standings([d for d in data if d.season == m.season]) if m.season else []
+                season_rows = standings([d for d in (table_data or data) if d.season == m.season]) if m.season else []
                 season_tables[m.season] = season_rows
             st, late = _standing_context(season_rows, m.home_team_id, m.away_team_id)
             quotes = db.scalars(select(OddsQuote).where(OddsQuote.match_id == m.id)).all()

@@ -265,6 +265,35 @@ def cron_analyze():
     return {"status": "started"}
 
 
+@router.post("/backtest/cups")
+def backtest_cups(code: str = "UCL", months: int = 18):
+    """Backtest hors échantillon « coupe seule » contre « historique commun » (lancé en arrière-plan)."""
+    from ..services.cup_pool import run_backtest_in_background
+    run_backtest_in_background(code, max(3, min(months, 36)))
+    return {"status": "started"}
+
+
+@router.get("/backtest/cups")
+def backtest_cups_result(db: Session = Depends(get_db)):
+    from ..models import Setting
+    row = db.get(Setting, "cup_backtest")
+    return row.value if row else {"status": "none"}
+
+
+@router.put("/cup-pooling")
+def cup_pooling(body: dict, db: Session = Depends(get_db)):
+    """Active ou coupe l'historique commun des coupes internationales."""
+    from ..models import Setting
+    row = db.get(Setting, "cup_pooling")
+    val = {"enabled": bool(body.get("enabled"))}
+    if row is None:
+        db.add(Setting(key="cup_pooling", value=val))
+    else:
+        row.value = val
+    db.commit()
+    return val
+
+
 @router.post("/teams/merge-international")
 def merge_international(db: Session = Depends(get_db)):
     from ..services.sync import merge_international_duplicates

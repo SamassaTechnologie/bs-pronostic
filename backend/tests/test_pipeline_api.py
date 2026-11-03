@@ -737,3 +737,16 @@ def test_sportapi_fast_results_and_live_backup(populated, monkeypatch):
         m = db.get(Match, mid)
         m.status, m.home_goals, m.away_goals, m.ht_home_goals, m.ht_away_goals = saved
         db.commit()
+
+
+def test_cup_pooling_backtest_and_analysis(populated, client):
+    """Coupes : backtest comparatif exécutable et analyse avec historique commun (activable)."""
+    from app.services import cup_pool
+    with SessionLocal() as db:
+        r = cup_pool.cup_backtest(db, "ENG1", months=1)  # simple exécution sur des données réelles
+        assert r["status"] == "ok" and "matchs_communs" in r
+    assert client.put("/api/admin/cup-pooling", json={"enabled": True}, headers=ADMIN).json() == {"enabled": True}
+    with SessionLocal() as db:
+        assert cup_pool.enabled(db)
+        assert run_analysis(db, now=NOW, publish=False)["analysed"] >= 0
+    client.put("/api/admin/cup-pooling", json={"enabled": False}, headers=ADMIN)
