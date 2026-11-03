@@ -101,6 +101,13 @@ class TeamResolver:
         if team is None and country in INTERNATIONAL:
             # Coupe internationale : on rattache l'équipe à son club de championnat (historique commun).
             team = find_club(db, name)
+        if team is None and country in INTERNATIONAL:
+            # Club étranger déjà connu sous une autre graphie (« FK Shakhtar Donetsk » / « Shakhtar Donetsk ») :
+            # rattachement seulement si le nom est très proche et sans ambiguïté.
+            same = db.scalars(select(Team).where(Team.country == country)).all()
+            scored = sorted(((similarity(name, t.name), t) for t in same), key=lambda x: x[0], reverse=True)
+            if scored and scored[0][0] >= 90 and (len(scored) == 1 or scored[0][0] - scored[1][0] >= 5):
+                team = scored[0][1]
         if team is None:
             team = Team(name=name.strip(), norm_name=norm, country=country)
             db.add(team)

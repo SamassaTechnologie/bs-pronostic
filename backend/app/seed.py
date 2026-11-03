@@ -54,6 +54,8 @@ AFRICA = [
     ("BFA1", "Ligue 1", "Burkina Faso", 554, None, False),
 ]
 CUP_ALLSPORTS = {"CAF1": 346, "CAF2": 390}
+# Historique ancien des coupes européennes (source principale inchangée)
+HISTORY_ALLSPORTS = {"UCL": 3, "UEL": 4, "UECL": 683}
 
 
 def seed_reference_data(db: Session) -> None:
@@ -81,6 +83,9 @@ def seed_reference_data(db: Session) -> None:
             continue
         db.add(Competition(code=code, name=name, country=country, enabled=enabled, allsports_id=as_id,
                            api_football_id=af, primary_source="allsports"))
+    for c in db.scalars(select(Competition).where(Competition.code.in_(list(HISTORY_ALLSPORTS)))).all():
+        if c.allsports_id is None:
+            c.allsports_id = HISTORY_ALLSPORTS[c.code]
     # Coupes CAF déjà créées : AllSportsAPI devient leur source (API-Football indisponible), une seule fois.
     for c in db.scalars(select(Competition).where(Competition.code.in_(list(CUP_ALLSPORTS)))).all():
         if c.allsports_id is None:

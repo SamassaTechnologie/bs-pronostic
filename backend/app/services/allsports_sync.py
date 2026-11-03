@@ -52,6 +52,8 @@ def _account_problem(exc: Exception) -> bool:
 
 
 def _history(db: Session, p: AllSports, comps: list[Competition], now: datetime, force: bool) -> dict:
+    """Historique : compétitions AllSportsAPI, plus l'historique ancien des coupes suivies par une autre source
+    (Ligue des champions : football-data.org ne fournit qu'une saison et demie)."""
     from .sync import MatchIndex, TeamResolver, _run, upsert_match
 
     def work(run: SyncRun) -> tuple[int, str]:
@@ -74,11 +76,22 @@ def _history(db: Session, p: AllSports, comps: list[Competition], now: datetime,
                     if _account_problem(exc):
                         raise ProviderError("; ".join(errors))
                     continue
+                foreign = comp.primary_source != "allsports"
                 for x in rows:
                     rec = p.to_record(x, comp.code)
-                    if rec and rec.status == "FINISHED":
-                        upsert_match(db, comp, rec, resolver, index)
-                        total += 1
+                    if not rec or rec.status != "FINISHED":
+                        continue
+                    if foreign:
+                        rec.home_corners = rec.away_corners = rec.home_yellow = rec.away_yellow = None
+                        rec.home_red = rec.away_red = None  # statistiques : seulement pour ses propres compétitions
+                        h = resolver.resolve(rec.home_name, comp.country, rec.source)
+                        a = resolver.resolve(rec.away_name, comp.country, rec.source)
+                        if index.find(h.id, a.id, rec.kickoff, rec.status) is None and any(
+                                abs((m.kickoff - rec.kickoff).total_seconds()) < 36 * 3600
+                                for pair, ms in index.by_pair.items() if h.id in pair or a.id in pair for m in ms):
+                            continue  # même journée déjà en base sous d'autres noms : pas de doublon
+                    upsert_match(db, comp, rec, resolver, index)
+                    total += 1
                 done[comp.code] = sorted(set(done.get(comp.code, [])) | {k})
                 row = db.get(Setting, "allsports_history")
                 if row is None:
@@ -153,13 +166,15 @@ def run_allsports(db: Session, kinds: set, now: datetime, force: bool, days_ahea
     from .sync import _add_api_usage
     comps = _comps(db)
     p = make_provider(db)
-    if not comps or not p.is_configured():
+    hist_comps = db.scalars(select(Competition).where(Competition.enabled.is_(True),
+                                                      Competition.allsports_id.is_not(None))).all()
+    if not hist_comps or not p.is_configured():
         return []
     out = []
     try:
         if "history" in kinds:
-            out.append(_history(db, p, comps, now, force))
-        if "upcoming" in kinds:
+            out.append(_history(db, p, hist_comps, now, force))
+        if "upcoming" in kinds and comps:
             out.append(_upcoming(db, p, comps, now, days_ahead))
     finally:
         _add_api_usage(db, p.name, p.requests_made)
