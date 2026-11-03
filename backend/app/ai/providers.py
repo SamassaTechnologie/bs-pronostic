@@ -213,6 +213,7 @@ def _groq_web(prompt: str) -> dict:
             if url and url not in seen and "groq.com" not in url:
                 seen.add(url)
                 sources.append({"title": title or url.split("/")[2], "uri": url})
+    text = _re.sub(r"【[^】]*】", "", text).strip()  # marques de citation internes de Groq
     if not sources:
         text = ""
     return {"text": text[:2500], "sources": sources[:6], "queries": queries[:4]}
