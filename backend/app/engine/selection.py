@@ -13,8 +13,9 @@ DEFAULT_SETTINGS: dict = {
     # Critères de sélection
     "min_probability": 0.70,
     "min_confidence": 55,
-    # Exclut les marchés quasi certains sans intérêt (cote juste < 1,10, ex. +0,5 but à 95 %)
-    "min_fair_odds": 1.10,
+    # Exclut les paris injouables chez les bookmakers (cote juste < 1,28, ex. +0,5 but à 95 %) ;
+    # la zone 1,25-1,50 reste aussi fiable que les cotes très basses (bilan réel, novembre 2026)
+    "min_fair_odds": 1.28,
     "max_picks_per_match": 2,
     "max_daily_picks": 15,
     "days_ahead": 3,
@@ -22,10 +23,10 @@ DEFAULT_SETTINGS: dict = {
     "extended_in_picks": True,  # marchés étendus validés par backtest admis dans les pronostics (1 par match)
     "value_popular_only": True,  # pronostics à cote : grands championnats seulement (données et cotes plus sûres)
     # Sélection SAM du jour : courte liste, critères renforcés
-    "featured_min_probability": 0.75,
+    "featured_min_probability": 0.72,
     "featured_min_confidence": 70,
     "featured_max_per_day": 5,
-    "featured_min_fair_odds": 1.15,  # écarte les quasi-certitudes sans intérêt de la vitrine
+    "featured_min_fair_odds": 1.28,  # cote jouable chez les bookmakers
     # Pronostics à cote : probabilité moyenne mais solide, cote plus intéressante
     "value_min_odds": 1.40,
     "value_max_odds": 2.20,

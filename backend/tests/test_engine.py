@@ -195,11 +195,13 @@ def test_confidence_reacts_to_data_volume_and_market():
 
 
 def test_tiers_and_selection_rules():
-    s = DEFAULT_SETTINGS
+    s = {**DEFAULT_SETTINGS, "min_fair_odds": 1.10}  # règles testées avec un seuil de cote bas
     assert tier_of(0.86, s) == "A" and tier_of(0.80, s) == "B" and tier_of(0.72, s) == "C" and tier_of(0.6, s) == "D"
     conf = {"score": 70, "level": "Élevée"}
     trivial = {"key": "O0.5", "group": "buts", "available": True, "probability": 0.95, "confidence": conf}
     assert not eligible(trivial, s)  # cote juste 1,05 < 1,10
+    assert not eligible(a_ := {"key": "O1.5", "group": "buts", "available": True, "probability": 0.8,
+                                "confidence": {"score": 70, "level": "Élevée"}}, DEFAULT_SETTINGS)  # 1,25 < 1,28 : injouable
     a = {"key": "O1.5", "group": "buts", "available": True, "probability": 0.8, "confidence": conf}
     b = {"key": "U3.5", "group": "buts", "available": True, "probability": 0.75, "confidence": conf}
     c = {"key": "1X", "group": "resultat", "available": True, "probability": 0.82, "confidence": conf}

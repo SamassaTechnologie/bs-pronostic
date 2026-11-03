@@ -212,7 +212,7 @@ def test_featured_selection(populated, client):
         feats = db.scalars(select(Prediction).where(Prediction.featured.is_(True))).all()
         per_day = {}
         for p in feats:
-            assert p.probability >= 0.75 and p.confidence >= 70 and p.featured_at is not None
+            assert p.probability >= 0.72 and p.confidence >= 70 and p.featured_at is not None
             per_day.setdefault(p.match.kickoff.date(), set()).add(p.match_id)
         assert all(len(v) <= 5 for v in per_day.values())
         assert len({p.match_id for p in feats}) == len(feats)  # un par match
