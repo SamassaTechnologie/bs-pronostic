@@ -269,3 +269,12 @@ Le texte n'est retenu qu'avec au moins une source ; il alimente seulement la sec
 « Selon la presse, … », aucun chiffre accepté) et les points de vigilance, avec les liens des sources. Les probabilités
 du moteur ne changent jamais. Réglages : `web_search`, `web_daily` (40 par défaut) dans Administration → Analyse IA ;
 test : `POST /api/admin/ai/test-web`.
+
+### Repris de samassa-scores (novembre 2026)
+- **Chronologie et statistiques** (`matches.details`) : buts, penalties, contre son camp, cartons et dix statistiques
+  (possession, tirs, corners…), tirés d'AllSportsAPI : en direct (appel « Livescore » déjà fait pour les scores) et
+  version définitive après le match (un appel « Fixtures » par synchronisation, `_final_details`). Les buteurs ne
+  s'affichent que si leur nombre correspond au score.
+- **Flash « BUT ! »** sur la page Direct quand un score augmente.
+- **Page /matchs** : bandeau des 7 jours (hier → J+5), championnats repliables, grands championnats en tête.
+
