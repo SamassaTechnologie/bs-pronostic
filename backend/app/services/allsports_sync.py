@@ -164,6 +164,37 @@ def _upcoming(db: Session, p: AllSports, comps: list[Competition], now: datetime
     return _run(db, p.name, "calendrier", work)
 
 
+def _final_details(db: Session, p: AllSports, now: datetime) -> Optional[dict]:
+    """Chronologie et statistiques définitives des matchs terminés depuis moins de 30 h (tous championnats suivis) :
+    un seul appel « Fixtures » couvrant hier et aujourd'hui."""
+    from .sync import _run
+    todo = db.scalars(select(Match).join(Competition, Match.competition_id == Competition.id).where(
+        Competition.enabled.is_(True), Match.status == "FINISHED", Match.kickoff >= now - timedelta(hours=30),
+        Match.kickoff <= now - timedelta(minutes=100))).unique().all()
+    todo = [m for m in todo if not (m.details or {}).get("final")]
+    if not todo:
+        return None
+
+    def work(run: SyncRun) -> tuple[int, str]:
+        rows = p.fixtures((now - timedelta(days=1)).date().isoformat(), now.date().isoformat())
+        done = 0
+        for x in rows:
+            if status_of(x) != "FINISHED":
+                continue
+            m = _find(todo, x)
+            if m is None:
+                continue
+            d = details_of(x)
+            if d:
+                d["final"] = True
+                m.details = d
+                done += 1
+        db.commit()
+        return done, f"{done} match(s) : chronologie et statistiques définitives ({len(todo)} en attente)"
+
+    return _run(db, p.name, "chronologie", work)
+
+
 def run_allsports(db: Session, kinds: set, now: datetime, force: bool, days_ahead: int) -> list[dict]:
     """Étapes AllSportsAPI de la synchronisation (appelée par run_sync)."""
     from .sync import _add_api_usage
@@ -179,6 +210,10 @@ def run_allsports(db: Session, kinds: set, now: datetime, force: bool, days_ahea
             out.append(_history(db, p, hist_comps, now, force))
         if "upcoming" in kinds and comps:
             out.append(_upcoming(db, p, comps, now, days_ahead))
+        if "upcoming" in kinds:
+            fin = _final_details(db, p, now)
+            if fin:
+                out.append(fin)
     finally:
         _add_api_usage(db, p.name, p.requests_made)
     return out
