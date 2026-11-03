@@ -63,7 +63,7 @@ export function JouerMesParis({ tz, justPlaced }: { tz: string; justPlaced: bool
   const load = useCallback(async (t: string) => {
     try {
       const r = await fetch(`/api/proxy/jeu/mes-paris?statut=${t === "termines" ? "termines" : "en-cours"}`, { cache: "no-store" });
-      const x = await r.json();
+      const x = await r.json().catch(() => ({ detail: "Service momentanément indisponible, réessayez dans un instant." }));
       if (!r.ok) throw new Error(x.detail || "Erreur");
       setD(x);
     } catch (e) {

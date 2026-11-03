@@ -91,7 +91,7 @@ function TargetCombos({ tz }: { tz: string }) {
     setErr(null);
     try {
       const r = await fetch("/api/proxy/combos/target", { method: "POST", body: JSON.stringify({ target, max_legs: maxLegs }) });
-      const d = await r.json();
+      const d = await r.json().catch(() => ({ detail: "Service momentanément indisponible, réessayez dans un instant." }));
       if (!r.ok) throw new Error(d.detail || "Erreur");
       setRes(d);
     } catch (e) {
@@ -186,7 +186,7 @@ export function ComboBuilder({ tz }: { tz: string }) {
         method: "POST",
         body: JSON.stringify({ legs, mode, min_confidence: minConf }),
       });
-      const d = await r.json();
+      const d = await r.json().catch(() => ({ detail: "Service momentanément indisponible, réessayez dans un instant." }));
       if (!r.ok) throw new Error(d.detail || "Erreur");
       setCombos(d.combos);
       setMsg(d.message);

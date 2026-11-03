@@ -50,7 +50,7 @@ export function LiveBoard({ tz }: { tz: string }) {
   const load = useCallback(async () => {
     try {
       const r = await fetch(`/api/proxy/live?tz=${encodeURIComponent(tz)}`, { cache: "no-store" });
-      const d = await r.json();
+      const d = await r.json().catch(() => ({ detail: "Service momentanément indisponible, réessayez dans un instant." }));
       if (!r.ok) throw new Error(d.detail || "Erreur");
       setBoard({ live: d.live ?? d.items ?? [], upcoming: d.upcoming ?? [], finished: d.finished ?? [], refreshed_at: d.refreshed_at, error: d.error });
       setError(null);

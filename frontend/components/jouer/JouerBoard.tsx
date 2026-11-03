@@ -25,7 +25,7 @@ export function JouerBoard({ tz }: { tz: string }) {
     setErr(null);
     try {
       const r = await fetch(`/api/proxy/jeu/board?jour=${j}&tz=${encodeURIComponent(tz)}`, { cache: "no-store" });
-      const d = await r.json();
+      const d = await r.json().catch(() => ({ detail: "Service momentanément indisponible, réessayez dans un instant." }));
       if (!r.ok) throw new Error(d.detail || "Service indisponible");
       setData(d);
     } catch (e) {

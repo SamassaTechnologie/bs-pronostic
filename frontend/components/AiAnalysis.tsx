@@ -57,7 +57,7 @@ export function AiAnalysis({ matchId, home, away, tz, thresholds }: { matchId: n
     setBusy(true);
     try {
       const r = await fetch(`/api/proxy/matches/${matchId}/ai`, { cache: "no-store" });
-      const d = await r.json();
+      const d = await r.json().catch(() => ({ detail: "Service momentanément indisponible, réessayez dans un instant." }));
       setRes(r.ok ? d : { status: "error", message: d.detail || d.error || "Service indisponible", retryable: true });
     } catch {
       setRes({ status: "error", message: "Connexion impossible", retryable: true });

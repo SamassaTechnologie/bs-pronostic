@@ -114,7 +114,7 @@ export function Assistant({ tz, match }: { tz: string; match?: { id: number; lab
     setBusy(true);
     try {
       const r = await fetch("/api/proxy/assistant", { method: "POST", body: JSON.stringify({ question, history, match_id: match?.id ?? null }) });
-      const d = await r.json();
+      const d = await r.json().catch(() => ({ detail: "Service momentanément indisponible, réessayez dans un instant." }));
       if (!r.ok || d.status !== "ok") {
         setMsgs((m) => [...m, { role: "assistant", text: d.message || d.detail || "Service indisponible, réessayez.", error: true }]);
       } else {

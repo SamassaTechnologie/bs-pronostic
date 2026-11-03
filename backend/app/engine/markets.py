@@ -214,6 +214,10 @@ def joint_ft_probability(keys: Iterable[str], m: np.ndarray) -> float:
 
 def evaluate_market(key: str, r: MatchData) -> Optional[bool]:
     """True/False si le marché est gagné/perdu, None si la donnée n'existe pas."""
+    if key.startswith("e:"):  # marchés étendus : réglés par engine.extended
+        from .extended import settle
+        res = settle(key, r.hg, r.ag, r.hthg, r.htag)
+        return None if res in (None, "void") else res == "won"
     if key.startswith("HT_"):
         if r.hthg is None or r.htag is None:
             return None

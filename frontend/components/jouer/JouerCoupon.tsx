@@ -51,7 +51,7 @@ export function JouerCoupon({ tz }: { tz: string }) {
     try {
       const sel = legs.map((l) => ({ match_id: l.match_id, market_key: l.market_key }));
       const r = await fetch("/api/proxy/jeu/paris", { method: "POST", body: JSON.stringify({ selections: sel, stake, mode }) });
-      const d = await r.json();
+      const d = await r.json().catch(() => ({ detail: "Service momentanément indisponible, réessayez dans un instant." }));
       if (!r.ok) throw new Error(d.detail || "Pari refusé");
       clear();
       router.push("/jouer/mes-paris?ok=1");

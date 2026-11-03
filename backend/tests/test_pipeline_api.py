@@ -750,3 +750,18 @@ def test_cup_pooling_backtest_and_analysis(populated, client):
         assert cup_pool.enabled(db)
         assert run_analysis(db, now=NOW, publish=False)["analysed"] >= 0
     client.put("/api/admin/cup-pooling", json={"enabled": False}, headers=ADMIN)
+
+
+def test_live_board_with_extended_pick(populated, client):
+    """Page Direct : un pronostic sur un marché étendu ne doit jamais faire échouer la page."""
+    from app.engine.markets import evaluate_market
+    from app.engine.types import MatchData
+    from app.models import Prediction
+    from app.services.live import _pick_state
+    m = MatchData(1, 1, NOW, 1, 2, hg=2, ag=1, hthg=1, htag=0)
+    assert evaluate_market("e:EH-22", m) in (True, False, None)
+    with SessionLocal() as db:
+        match = db.scalars(select(Match).where(Match.status == "FINISHED")).first()
+        p = Prediction(match_id=match.id, market_key="e:EH-22", market_label="test", probability=0.6)
+        assert isinstance(_pick_state(p, match, {"home": 1, "away": 0}), str)
+    assert client.get("/api/live").status_code == 200

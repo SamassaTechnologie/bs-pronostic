@@ -35,7 +35,7 @@ export function SearchBox() {
     const t = setTimeout(async () => {
       try {
         const r = await fetch(`/api/proxy/search?q=${encodeURIComponent(term)}`, { signal: ctl.signal });
-        if (r.ok) setRes(await r.json());
+        if (r.ok) setRes(await r.json().catch(() => ({ detail: "Service momentanément indisponible, réessayez dans un instant." })));
       } catch {}
       setBusy(false);
     }, 250);

@@ -32,7 +32,7 @@ export function LiveHeader({ match, initial, tz, homeStanding, awayStanding, chi
       if (document.visibilityState !== "visible") return;
       try {
         const r = await fetch(`/api/proxy/matches/${match.id}/live`, { cache: "no-store" });
-        if (r.ok) setLive(await r.json());
+        if (r.ok) setLive(await r.json().catch(() => ({ detail: "Service momentanément indisponible, réessayez dans un instant." })));
       } catch {}
     }, 60000);
     return () => clearInterval(t);

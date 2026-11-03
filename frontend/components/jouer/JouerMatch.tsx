@@ -97,7 +97,7 @@ export function JouerMatch({ id, tz }: { id: number; tz: string }) {
 
   useEffect(() => {
     fetch(`/api/proxy/jeu/matchs/${id}`, { cache: "no-store" })
-      .then(async (r) => { const x = await r.json(); if (!r.ok) throw new Error(x.detail || "Erreur"); setD(x); })
+      .then(async (r) => { const x = await r.json().catch(() => ({ detail: "Service momentanément indisponible, réessayez dans un instant." })); if (!r.ok) throw new Error(x.detail || "Erreur"); setD(x); })
       .catch((e) => setErr(e instanceof Error ? e.message : "Erreur"));
   }, [id]);
 

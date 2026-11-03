@@ -141,7 +141,17 @@ def _pick_state(p: Prediction, m: Match, live: Optional[dict]) -> str:
     if data.hg is None:
         return "Coup d'envoi imminent"
     key = p.market_key
-    res = evaluate_market(key, data)
+    if key.startswith("e:"):  # marchés étendus (handicaps, combinés…)
+        from ..engine.extended import settle as settle_ext
+        r = settle_ext(key, data.hg, data.ag, data.hthg, data.htag)
+        if r is None:
+            return "Suivi au coup de sifflet final"
+        return {"won": "Gagnant si le score ne bouge plus", "lost": "Perdant si le score ne bouge plus",
+                "void": "Remboursé si le score ne bouge plus"}[r]
+    try:
+        res = evaluate_market(key, data)
+    except KeyError:  # marché inconnu : jamais d'erreur pour toute la page Direct
+        res = None
     if res is None:
         return "Suivi au coup de sifflet final"
     if key.startswith(("O", "HT_O")) and not res:
