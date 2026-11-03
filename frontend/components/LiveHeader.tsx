@@ -38,7 +38,12 @@ function EvIcon({ t }: { t: MatchEvent["type"] }) {
 }
 
 /** Chronologie (buts, cartons) et statistiques du match, à partir de la source de données (jamais estimées). */
-function MatchTimeline({ d }: { d: MatchDetails }) {
+function MatchTimeline({ d: raw, home, away }: { d: MatchDetails; home?: number | null; away?: number | null }) {
+  const isGoal = (e: MatchEvent) => e.type === "goal" || e.type === "penalty" || e.type === "own_goal";
+  const goals = raw.events.filter(isGoal).length;
+  // Buteurs affichés seulement s'ils correspondent exactement au score (jamais d'information contradictoire)
+  const consistent = home === null || home === undefined || away === null || away === undefined || goals === home + away;
+  const d = consistent ? raw : { ...raw, events: raw.events.filter((e) => !isGoal(e)) };
   return (
     <div className="mt-4 border-t border-white/15 pt-3">
       {d.events.length > 0 && (
@@ -76,6 +81,7 @@ function MatchTimeline({ d }: { d: MatchDetails }) {
           })}
         </div>
       )}
+      {!consistent && <p className="mt-2 text-[11px] text-white/60">Buteurs non affichés : la liste de la source ne correspond pas encore au score.</p>}
       <p className="mt-2 text-[10.5px] text-white/45">Chronologie et statistiques : {d.source ?? "source de données"}.</p>
     </div>
   );
@@ -153,7 +159,7 @@ export function LiveHeader({ match, initial, tz, homeStanding, awayStanding, chi
         </p>
       )}
       {live.details && (live.state === "live" || live.state === "finished") && (live.details.events.length > 0 || live.details.stats.length > 0) && (
-        <MatchTimeline d={live.details} />
+        <MatchTimeline d={live.details} home={live.home} away={live.away} />
       )}
       {children}
     </div>
