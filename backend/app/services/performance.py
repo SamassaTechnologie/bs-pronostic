@@ -47,6 +47,8 @@ def settle_predictions(db: Session, now: Optional[datetime] = None) -> dict:
     bets = settle_bets(db, now)
     if any(bets.values()):
         counts["bets"] = sum(bets.values())
+    from .response_cache import clear as clear_cache
+    clear_cache()
     from .push import dispatch_async  # alertes : nouveaux pronostics, résultats du banker
     dispatch_async()
     return dict(counts)

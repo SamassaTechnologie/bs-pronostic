@@ -221,6 +221,8 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
         if publish and bk else 0
     combos = select_flagged_picks(db, combo_cands, s, now, "combo_pick", "combo_max_per_day", "combo_popular_only") \
         if publish and combo_cands else 0
+    from .response_cache import clear as clear_cache
+    clear_cache()
     return {"analysed": stats["analysed"], "ok": stats["ok"], "insufficient": stats["insufficient"],
             "competitions": len(by_comp), "published": published, "featured": featured, "value_picks": value,
             "combo_picks": combos, "bankers": bankers,

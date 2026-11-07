@@ -988,3 +988,23 @@ def test_lineups_substitutions_and_pressure(populated, monkeypatch):
         assert allsports_sync.prematch_lineups(db, now) == 0  # déjà connue
         comp.code, m.details, m.status = old_code, old_details, old_status
         db.commit()
+
+
+def test_response_cache(client, monkeypatch):
+    """Cache court des réponses publiques : servi depuis la mémoire, effacé dès qu'une analyse ou un règlement
+    modifie les données ; jamais pour le direct."""
+    from app.config import get_settings
+    from app.services import response_cache as rc
+    monkeypatch.setattr(get_settings(), "response_cache_seconds", 90)
+    rc.clear()
+    r1 = client.get("/api/meta")
+    assert r1.headers.get("x-cache") == "MISS"
+    r2 = client.get("/api/meta")
+    assert r2.headers.get("x-cache") == "HIT" and r2.json() == r1.json()
+    with SessionLocal() as db:
+        settle_predictions(db)
+    assert client.get("/api/meta").headers.get("x-cache") == "MISS"
+    assert "x-cache" not in client.get("/api/live").headers
+    client.put("/api/admin/settings", json={}, headers={"X-Admin-Token": "jeton-admin-test"})
+    assert client.get("/api/meta").headers.get("x-cache") == "MISS"
+    rc.clear()

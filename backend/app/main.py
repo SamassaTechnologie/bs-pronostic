@@ -106,6 +106,33 @@ async def lifespan(app: FastAPI):
 def create_app() -> FastAPI:
     cfg = get_settings()
     app = FastAPI(title="SAM-Prédiction API", description=cfg.slogan, version="1.0.0", lifespan=lifespan)
+    @app.middleware("http")
+    async def cache_and_time(request, call_next):
+        """Réponses publiques en cache court + journal des requêtes lentes (diagnostic des lenteurs)."""
+        import time as _t
+        from starlette.responses import Response
+        from .services import response_cache as rc
+        start = _t.perf_counter()
+        key = None
+        if request.method == "GET" and rc.CACHEABLE.match(request.url.path):
+            key = str(request.url.path) + "?" + str(request.url.query)
+            hit = rc.get(key)
+            if hit:
+                return Response(content=hit[2], status_code=hit[1], media_type=hit[3], headers={"X-Cache": "HIT"})
+        gen = rc.generation()
+        response = await call_next(request)
+        if key and response.status_code == 200:
+            body = b"".join([chunk async for chunk in response.body_iterator])
+            ctype = response.headers.get("content-type", "application/json")
+            rc.put(key, 200, body, ctype, gen)
+            response = Response(content=body, status_code=200, media_type=ctype, headers={"X-Cache": "MISS"})
+        if request.method != "GET" and request.url.path.startswith(("/api/admin", "/api/cron")):
+            rc.clear()  # réglages ou données modifiés par l'administration
+        ms = (_t.perf_counter() - start) * 1000
+        if ms > 800:
+            logging.getLogger("sam.perf").warning("Requête lente : %s %s %.0f ms", request.method, request.url.path, ms)
+        return response
+
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     app.add_middleware(CORSMiddleware, allow_origins=[o.strip() for o in cfg.cors_origins.split(",") if o.strip()],
                        allow_methods=["GET", "POST", "PUT"], allow_headers=["*"])
