@@ -292,3 +292,28 @@ class BetLeg(Base):
     result: Mapped[str] = mapped_column(String(10), default="pending")
 
     match: Mapped[Match] = relationship(lazy="joined")
+
+
+class PushSubscription(Base):
+    """Abonnement aux alertes (Web Push) d'un appareil ; préférences choisies par le membre."""
+    __tablename__ = "push_subscriptions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    member_id: Mapped[str] = mapped_column(String(64), index=True)
+    endpoint: Mapped[str] = mapped_column(Text, unique=True)
+    p256dh: Mapped[str] = mapped_column(String(200))
+    auth: Mapped[str] = mapped_column(String(100))
+    prefs: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime, nullable=True)
+    failures: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class PushLog(Base):
+    """Alertes déjà envoyées (jamais deux fois la même à un appareil)."""
+    __tablename__ = "push_log"
+    __table_args__ = (UniqueConstraint("subscription_id", "kind", "ref"),)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    subscription_id: Mapped[int] = mapped_column(Integer, index=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    ref: Mapped[str] = mapped_column(String(40))
+    sent_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)

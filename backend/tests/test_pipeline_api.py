@@ -891,3 +891,57 @@ def test_market_stats_pages(client):
         assert all(u["probability"] >= 0.5 for u in r["upcoming"])
     r = client.get("/api/stats/btts", params={"competition": code}).json()
     assert r["teams"] and r["league_n"] > 0
+
+
+def test_push_alerts(populated, client, monkeypatch):
+    """Alertes : abonnement par membre, une seule fois par alerte, filtres favoris, nuit respectée, appareil
+    désinstallé supprimé."""
+    import pywebpush
+    from app.config import get_settings
+    from app.models import PushLog, PushSubscription
+    from app.services import push
+    cfg = get_settings()
+    h = {"X-Member-Id": "alerte-1"}
+    monkeypatch.setattr(cfg, "vapid_public_key", "")
+    assert client.get("/api/alertes/cle").json()["enabled"] is False
+    sub = {"endpoint": "https://push.exemple.ml/abc", "keys": {"p256dh": "k" * 80, "auth": "a" * 20}}
+    assert client.post("/api/alertes/abonnement", json={"subscription": sub}, headers=h).status_code == 503
+    monkeypatch.setattr(cfg, "vapid_public_key", "pub")
+    monkeypatch.setattr(cfg, "vapid_private_key", "priv")
+    monkeypatch.setattr(push, "dispatch_async", lambda: None)
+    sent = []
+    monkeypatch.setattr(pywebpush, "webpush", lambda **kw: sent.append(kw["data"]))
+    r = client.post("/api/alertes/abonnement", json={"subscription": sub, "prefs": {"combo": True}}, headers=h).json()
+    assert r["prefs"]["banker"] and r["prefs"]["combo"]
+    assert client.post("/api/alertes/etat", json={"endpoint": sub["endpoint"]}, headers={"X-Member-Id": "autre"}).json()["subscribed"] is False
+    assert client.post("/api/alertes/preferences", json={"endpoint": sub["endpoint"], "prefs": {}}, headers={"X-Member-Id": "autre"}).status_code == 404
+
+    with SessionLocal() as db:
+        s = db.scalar(select(PushSubscription))
+        pred = db.scalars(select(Prediction)).first()
+        old = (pred.result, pred.featured)
+        now = pred.match.kickoff - timedelta(hours=5)
+        pred.featured, pred.result = True, "pending"
+        db.commit()
+        night = now.replace(hour=2)
+        assert push.dispatch(db, night)["skipped"] == "nuit"
+        day = now.replace(hour=12) if now.hour < 7 or now.hour >= 23 else now
+        day = min(day, pred.match.kickoff - timedelta(hours=1))
+        n1 = push.dispatch(db, day)["sent"]
+        assert n1 >= 1 and any("Sélection SAM" in d for d in sent)
+        assert push.dispatch(db, day)["sent"] == 0  # jamais deux fois
+        assert db.scalar(select(func.count(PushLog.id))) >= 1
+        # favoris : un autre championnat → aucune nouvelle alerte de sélection
+        s.prefs = push.clean_prefs({"competitions": ["ZZZ"]})
+        db.commit()
+        assert all(k != "selection" for k, _, _ in push.build_messages(db, s, day))
+
+        class Gone(pywebpush.WebPushException):
+            pass
+        def refuse(**kw):
+            e = Gone("gone"); e.response = type("R", (), {"status_code": 410})(); raise e
+        monkeypatch.setattr(pywebpush, "webpush", refuse)
+        assert push.send(s, {"title": "t", "body": "b"}) is False and s.failures == 99
+        db.delete(s)
+        pred.result, pred.featured = old
+        db.commit()

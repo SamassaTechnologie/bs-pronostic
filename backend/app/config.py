@@ -52,6 +52,12 @@ class Settings(BaseSettings):
     ai_daily_budget: int = 400  # générations maximum par jour (toutes sources)
     ai_cache_hours: int = 12  # une analyse IA reste valable 12 h avant le match
     ai_timeout: float = 45.0
+    # Alertes Web Push (clés VAPID ; la clé privée reste côté serveur)
+    vapid_public_key: str = ""
+    vapid_private_key: str = ""
+    vapid_subject: str = "mailto:contact@sam-prediction.app"
+    push_quiet_start: int = 23  # pas d'alerte la nuit (heure du fuseau par défaut)
+    push_quiet_end: int = 7
     assistant_token: str = ""  # secret partagé avec le frontend (en-tête X-Assistant-Token)
     assistant_member_daily: int = 25  # questions par membre et par jour
     assistant_max_steps: int = 5  # appels d'outils maximum par question

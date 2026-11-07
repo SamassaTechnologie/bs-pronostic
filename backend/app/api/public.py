@@ -635,6 +635,8 @@ def public_summary(db: Session = Depends(get_db)):
 def live(tz: Optional[str] = None, db: Session = Depends(get_db)):
     """Journée : matchs en cours (scores football-data.org, légèrement différés), à venir et terminés."""
     from ..services.live import live_board
+    from ..services.push import dispatch_async
+    dispatch_async()  # appelé toutes les 10 min par la tâche planifiée : alertes différées de la nuit, etc.
     return live_board(db, tz_name=tz)
 
 

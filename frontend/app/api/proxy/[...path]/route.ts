@@ -5,10 +5,10 @@ import { authEnabled } from "@/lib/supabase/env";
 
 export const maxDuration = 120;
 
-const MEMBERS_ONLY = [/^jeu\//, /^assistant$/, /^live$/, /^predictions$/, /^matches\/\d+$/, /^matches\/\d+\/ai$/, /^combos\//];
+const MEMBERS_ONLY = [/^jeu\//, /^alertes\/(abonnement|etat|preferences|desabonnement|test)$/, /^assistant$/, /^live$/, /^predictions$/, /^matches\/\d+$/, /^matches\/\d+\/ai$/, /^combos\//];
 
-const GET_ALLOWED = [/^jeu\/(board|mes-paris|matchs\/\d+)$/, /^matches\/\d+\/(live|insights|ai)$/, /^search$/, /^competitions$/, /^competitions\/[A-Za-z0-9_-]+$/, /^teams\/\d+$/, /^live$/, /^recent-results$/, /^meta$/, /^predictions$/, /^matches(\/\d+)?$/, /^history$/, /^performance$/, /^calibration$/];
-const POST_ALLOWED = [/^combos\/generate$/, /^combos\/evaluate$/, /^combos\/target$/, /^assistant$/, /^jeu\/(paris|devis)$/];
+const GET_ALLOWED = [/^jeu\/(board|mes-paris|matchs\/\d+)$/, /^matches\/\d+\/(live|insights|ai)$/, /^search$/, /^competitions$/, /^competitions\/[A-Za-z0-9_-]+$/, /^teams\/\d+$/, /^live$/, /^recent-results$/, /^meta$/, /^predictions$/, /^matches(\/\d+)?$/, /^history$/, /^performance$/, /^calibration$/, /^alertes\/cle$/];
+const POST_ALLOWED = [/^combos\/generate$/, /^combos\/evaluate$/, /^combos\/target$/, /^assistant$/, /^jeu\/(paris|devis)$/, /^alertes\/(abonnement|etat|preferences|desabonnement|test)$/];
 
 async function forward(req: NextRequest, path: string[], method: "GET" | "POST") {
   const p = path.join("/");
@@ -25,6 +25,11 @@ async function forward(req: NextRequest, path: string[], method: "GET" | "POST")
       headers["X-Member-Id"] = member.id;
       if (member.email) headers["X-Member-Email"] = member.email;
     }
+  }
+  if (p.startsWith("alertes/") && member) {
+    // Alertes : l'appareil est rattaché au membre connecté, identifié ici côté serveur.
+    headers["X-App-Token"] = process.env.ASSISTANT_TOKEN || "";
+    headers["X-Member-Id"] = member.id;
   }
   if (p.startsWith("jeu/")) {
     // Section Jouer : identité du membre ajoutée ici, côté serveur (jamais fournie par le navigateur).
