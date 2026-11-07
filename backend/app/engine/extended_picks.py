@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import re
 import math
 from functools import lru_cache
 from pathlib import Path
@@ -87,6 +88,11 @@ def extended_markets(payload: dict, settings: dict, home: str, away: str) -> lis
     return out
 
 
+# Combinés « créateur de pari » proposés par la plupart des bookmakers : résultat ou double chance + les deux marquent,
+# résultat ou double chance + total de buts du match, les deux marquent + total de buts.
+COMBO_RE = re.compile(r"^e:((1|X|2|1X|X2|12)&(BY|BN|T[OU](2\.5|3\.5))|B[YN]&T[OU](2\.5|3\.5))$")
+
+
 def combo_markets(payload: dict, settings: dict) -> list[dict]:
     """Marchés combinés du même match (famille « Résultat + buts »), validés et calibrés, dans la zone de cote des
     pronostics combinés ; forme identique aux marchés principaux."""
@@ -106,7 +112,7 @@ def combo_markets(payload: dict, settings: dict) -> list[dict]:
     lo_p, lo_o, hi_o = float(settings["combo_min_probability"]), float(settings["combo_min_odds"]), float(settings["combo_max_odds"])
     out = []
     for r in rows:
-        if r["family"] != "res_combo" or r["void_probability"] > 0:
+        if r["family"] != "res_combo" or r["void_probability"] > 0 or not COMBO_RE.match(r["key"]):
             continue
         p = calibrate(r["key"], r["probability"])
         if p is None:

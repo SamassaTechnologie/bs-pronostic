@@ -838,13 +838,14 @@ def test_combo_picks_same_match(populated, client):
     """Pronostics combinés (résultat / les deux marquent + buts) : marchés validés, zone de cote 1,60 – 3,20,
     un par match, au plus 4 par jour, exposés dans le tableau de bord, l'historique et la performance."""
     from collections import Counter
-    from app.engine.extended_picks import validated
+    from app.engine.extended_picks import COMBO_RE, validated
+    assert COMBO_RE.match("e:BY&TO2.5") and COMBO_RE.match("e:12&TO2.5") and not COMBO_RE.match("e:1X&T2U1.5")
     with SessionLocal() as db:
         ans = db.scalars(select(Analysis)).all()
         combos = [c for a in ans for c in a.payload.get("combos") or []]
         assert combos, "aucun marché combiné calculé"
         for c in combos:
-            assert c["family"] == "res_combo" and c["key"] in validated()
+            assert c["family"] == "res_combo" and c["key"] in validated() and COMBO_RE.match(c["key"])
             assert 0.50 <= c["probability"] and 1.60 <= c["fair_odds"] <= 3.20
         assert {"e:BY&TO2.5", "e:12&TO2.5", "e:1&TO2.5", "e:2&TO2.5"} <= set(validated())  # combos demandés validés
         preds = db.scalars(select(Prediction).where(Prediction.combo_pick.is_(True))).all()
