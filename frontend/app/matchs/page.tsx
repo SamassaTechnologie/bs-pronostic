@@ -4,6 +4,7 @@ import { flag } from "@/lib/flags";
 import { time } from "@/lib/format";
 import type { MatchSummary } from "@/lib/types";
 import { ErrorBox } from "@/components/ui";
+import { isPopular, popularRank } from "@/lib/popular";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Matchs" };
@@ -37,14 +38,15 @@ export default async function Matchs({ searchParams }: { searchParams: Promise<{
   const groups: { code: string; name: string; country: string; popular: boolean; rows: Row[] }[] = [];
   if (res.ok) {
     for (const r of res.data.items) {
-      const c = r.match.competition as MatchSummary["competition"] & { popular?: boolean };
+      const c = r.match.competition;
       let g = groups.find((x) => x.code === c.code);
       if (!g) {
-        g = { code: c.code, name: c.name, country: c.country, popular: Boolean(c.popular), rows: [] };
+        g = { code: c.code, name: c.name, country: c.country, popular: isPopular(c.code), rows: [] };
         groups.push(g);
       }
       g.rows.push(r);
     }
+    groups.sort((a, b) => popularRank(a.code) - popularRank(b.code));
   }
 
   return (

@@ -217,9 +217,33 @@ def dashboard(tz: Optional[str] = None, db: Session = Depends(get_db)):
     today_matches = [{"match": a.payload.get("match") or match_summary(a.match), "status": a.status,
                       "n_picks": a.n_picks, "match_confidence": a.match_confidence,
                       "avoid": bool(a.payload.get("avoid_reasons"))} for a in today_an]
+    # Grands championnats : prochains matchs par compétition (ordre de popularité), meilleur pronostic de chaque match
+    from ..popular import is_popular, rank as prank
+    best_by_match: dict[int, dict] = {}
+    for c in picks:
+        mid = c["match"]["id"]
+        if mid not in best_by_match or (c["score"] or 0) > (best_by_match[mid]["score"] or 0):
+            best_by_match[mid] = c
+    pop_groups: dict[str, dict] = {}
+    for a in sorted(analyses, key=lambda a: a.match.kickoff):
+        comp = a.match.competition
+        if a.match.kickoff < now or not is_popular(comp.code):
+            continue
+        g = pop_groups.setdefault(comp.code, {"code": comp.code, "name": comp.name, "country": comp.country,
+                                              "matches": [], "n_matches": 0, "n_picks": 0})
+        g["n_matches"] += 1
+        g["n_picks"] += a.n_picks or 0
+        if len(g["matches"]) < 6:
+            b = best_by_match.get(a.match_id)
+            g["matches"].append({"match": a.payload.get("match") or match_summary(a.match), "status": a.status,
+                                 "n_picks": a.n_picks, "avoid": bool(a.payload.get("avoid_reasons")),
+                                 "best": {"label": b["label"], "probability": b["probability"],
+                                          "featured": b.get("featured", False)} if b else None})
+    popular_block = sorted(pop_groups.values(), key=lambda g: prank(g["code"]))
     last_sync = db.scalar(select(func.max(SyncRun.finished_at)).where(SyncRun.status == "ok",
                                                                       SyncRun.provider != "moteur"))
     return {
+        "popular": popular_block,
         "date": today.isoformat(), "timezone": str(zone.key),
         "last_sync": last_sync.isoformat() if last_sync else None,
         "last_analysis": latest[0].computed_at.isoformat() if latest else None,

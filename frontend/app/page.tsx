@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { backend, userTz } from "@/lib/api";
-import { dateTime, pct, signedPct } from "@/lib/format";
+import { pct } from "@/lib/format";
 import type { Meta, MatchSummary, PickCard as Pick } from "@/lib/types";
 import { Freshness } from "@/components/Freshness";
 import { PickCard } from "@/components/PickCard";
 import { CompactPick, List, MatchRow } from "@/components/Rows";
-import { Empty, ErrorBox, MoreLink, ProbBar, Section, Stat } from "@/components/ui";
+import { Empty, ErrorBox, MoreLink } from "@/components/ui";
+import { Category, SubCategory } from "@/components/Category";
+import { flag } from "@/lib/flags";
+import { isPopular, popularRank } from "@/lib/popular";
 import { Landing } from "@/components/Landing";
 import { currentMember } from "@/lib/supabase/server";
 import type { Combo, HistoryRow } from "@/lib/types";
@@ -38,7 +41,32 @@ type Dashboard = {
   avoid: { match: MatchSummary; reasons: string[]; match_confidence: number | null }[];
   markets: { key: string; label: string; count: number; avg_probability: number; avg_confidence: number }[];
   latest_analyses: { match: MatchSummary; computed_at: string; status: string; n_picks: number }[];
+  popular?: {
+    code: string; name: string; country: string; n_matches: number; n_picks: number;
+    matches: { match: MatchSummary; status: string; n_picks: number; avoid: boolean; best: { label: string; probability: number; featured: boolean } | null }[];
+  }[];
 };
+
+const IC = {
+  live: "M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0M7.8 7.8a6 6 0 0 0 0 8.4M16.2 7.8a6 6 0 0 1 0 8.4",
+  star: "M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z",
+  chart: "M4 19h16M6 16V9m6 7V5m6 11v-4",
+  combo: "M4 7h16M4 12h16M4 17h10",
+  calendar: "M7 3v3M17 3v3M4 8h16M5 5h14a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z",
+  trend: "M4 19V5M4 19h16M8 15l3-4 3 2 4-6",
+};
+
+/** Heure compacte pour les listes : « Auj. 19:00 », « Dem. 14:00 » ou « Sam. 14:00 ». */
+function shortKick(iso: string, tz: string): [string, string] {
+  const day = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+  const k = new Date(iso);
+  const t = new Intl.DateTimeFormat("fr-FR", { timeZone: tz, hour: "2-digit", minute: "2-digit" }).format(k);
+  const now = new Date();
+  if (day(k) === day(now)) return ["Auj.", t];
+  if (day(k) === day(new Date(now.getTime() + 86400000))) return ["Dem.", t];
+  const w = new Intl.DateTimeFormat("fr-FR", { timeZone: tz, weekday: "short" }).format(k).replace(".", "");
+  return [w.charAt(0).toUpperCase() + w.slice(1) + ".", t];
+}
 
 export default async function Home() {
   const tz = await userTz();
@@ -64,6 +92,15 @@ export default async function Home() {
   const first = (me.name || "").trim().split(/\s+/)[0];
   const settled = d.stats.history_settled;
   const tiers = meta.data?.calibration?.tiers;
+  // Matchs du jour regroupés par compétition (l'ordre du serveur place les grands championnats en tête)
+  const todayGroups: { code: string; name: string; country: string; popular: boolean; rows: Dashboard["today_matches"] }[] = [];
+  for (const t of d.today_matches) {
+    const c = t.match.competition;
+    let g = todayGroups.find((x) => x.code === c.code);
+    if (!g) { g = { code: c.code, name: c.name, country: c.country, popular: isPopular(c.code), rows: [] }; todayGroups.push(g); }
+    g.rows.push(t);
+  }
+  todayGroups.sort((a, b) => popularRank(a.code) - popularRank(b.code));
 
   return (
     <>
@@ -120,9 +157,21 @@ export default async function Home() {
 
       <div className="mt-3"><Freshness lastSync={d.last_sync} lastAnalysis={d.last_analysis} tz={tz} /></div>
 
+      {/* Sommaire des catégories */}
+      <nav className="-mx-3.5 mt-3 flex gap-1.5 overflow-x-auto px-3.5 pb-1 [scrollbar-width:none] md:mx-0 md:px-0" aria-label="Catégories">
+        {[
+          ...(live.length ? [["#direct", `Direct ${live.length}`]] : []),
+          ["#grands", "★ Grands championnats"], ["#pronostics", "Pronostics SAM"], ["#combines", "Combinés"],
+          ["#jour", "Matchs du jour"], ["#bilan", "Bilan"],
+        ].map(([h, l]) => (
+          <a key={h} href={h} className="shrink-0 rounded-full border border-line bg-white px-3 py-1.5 text-[12.5px] font-bold text-night">{l}</a>
+        ))}
+      </nav>
+
       {live.length > 0 && (
-        <Section title="En direct maintenant" action={<MoreLink href="/direct">Tout le direct</MoreLink>}>
-          <div className="-mx-3.5 flex gap-2.5 overflow-x-auto px-3.5 pb-1 [scrollbar-width:none] md:mx-0 md:px-0">
+        <Category id="direct" title="En direct maintenant" subtitle={`${live.length} match${live.length > 1 ? "s" : ""} en cours`}
+          icon={IC.live} tone="bg-brick text-white" badge={<span className="h-2 w-2 animate-pulse rounded-full bg-brick" aria-hidden />}>
+          <div className="-mx-3 flex gap-2.5 overflow-x-auto px-3 pb-1 [scrollbar-width:none]">
             {live.slice(0, 12).map((x) => (
               <Link key={x.match.id} href={`/matchs/${x.match.id}`} className="w-[220px] shrink-0 rounded-xl border border-line bg-white p-3">
                 <div className="flex items-center justify-between text-[11px]">
@@ -137,170 +186,191 @@ export default async function Home() {
               </Link>
             ))}
           </div>
-        </Section>
+          <div className="mt-2 text-right"><MoreLink href="/direct">Tout le direct</MoreLink></div>
+        </Category>
       )}
 
-      <Section
-        title="Sélection SAM du jour"
-        action={<MoreLink href="/historique?selection=1">Bilan</MoreLink>}
-      >
-        <p className="-mt-1 mb-3 px-1 text-sm text-steel">
-          5 pronostics au maximum, probabilité d&apos;au moins 75 % et confiance élevée, figés avant le match.
-          {d.stats.selection_settled
-            ? ` Bilan réel : ${pct(d.stats.selection_hit_rate)} sur ${d.stats.selection_settled} pronostics réglés.`
-            : ""}
-        </p>
-        {d.selection.length ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {d.selection.map((p) => (
-              <PickCard key={`s-${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} />
-            ))}
-          </div>
+      <Category id="grands" title="Grands championnats" subtitle="Ligue des champions, Premier League, LaLiga, Serie A, Bundesliga, Ligue 1…"
+        icon={IC.star} tone="bg-amber-soft text-amber"
+        badge={<span className="shrink-0 rounded-md bg-amber-soft px-1.5 py-0.5 text-[11px] font-bold text-amber">{(d.popular ?? []).reduce((t, g) => t + g.n_matches, 0)} matchs</span>}>
+        {(d.popular ?? []).length ? (
+          (d.popular ?? []).map((g, i) => (
+            <SubCategory key={g.code} open={i < 2}
+              title={<><span className="mr-1.5" aria-hidden>{flag(g.country)}</span>{g.name}</>}
+              hint={`${g.n_matches} match${g.n_matches > 1 ? "s" : ""} à venir · ${g.n_picks} pronostic${g.n_picks > 1 ? "s" : ""}`}
+              count={g.n_matches} action={<MoreLink href={`/ligues/${g.code}`}>Voir le championnat</MoreLink>}>
+              <ul className="divide-y divide-mist">
+                {g.matches.map((r) => (
+                  <li key={r.match.id}>
+                    <Link href={`/matchs/${r.match.id}`} className="grid grid-cols-[46px_minmax(0,1fr)] items-center gap-2 py-2">
+                      <span className="flex flex-col text-[12px] font-semibold leading-tight text-steel">
+                        {shortKick(r.match.kickoff, tz).map((x) => <span key={x}>{x}</span>)}
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block truncate text-[14px] font-semibold">{r.match.home.name} – {r.match.away.name}</span>
+                        {r.best ? (
+                          <span className="mt-0.5 inline-flex max-w-full items-center gap-1 rounded-md bg-pitch-soft px-1.5 py-0.5 text-[11.5px] font-semibold text-pitch-deep">
+                            {r.best.featured && <span className="rounded bg-pitch px-1 text-[9.5px] font-bold text-white">SAM</span>}
+                            <span className="truncate">{r.best.label} · {pct(r.best.probability)}</span>
+                          </span>
+                        ) : r.avoid ? (
+                          <span className="text-[11.5px] font-semibold text-brick">À éviter selon SAM</span>
+                        ) : r.status !== "ok" ? (
+                          <span className="text-[11.5px] text-steel">Données insuffisantes</span>
+                        ) : (
+                          <span className="text-[11.5px] text-steel">Aucun pronostic assez solide</span>
+                        )}
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </SubCategory>
+          ))
         ) : (
-          <Empty title="Aucun pronostic n'atteint les critères de la sélection pour le moment">
-            Mieux vaut ne rien proposer qu&apos;un pronostic fragile. Les autres sélections restent consultables ci-dessous.
-          </Empty>
+          <Empty title="Pas de match des grands championnats dans les prochains jours" />
         )}
-      </Section>
+      </Category>
 
-      <Section title="Combiné cote 2 du jour" action={<MoreLink href="/combines">Autre cote</MoreLink>}>
-        <p className="-mt-1 mb-3 px-1 text-sm text-steel">
-          2 ou 3 matchs au lieu de 8 à 10 : la même cote avec moins de risques de surprise. Matchs des 36 prochaines heures.
-        </p>
+      <Category id="pronostics" title="Pronostics SAM" subtitle="Sélection du jour, pronostics à cote, les plus fiables"
+        icon={IC.chart} tone="bg-pitch-soft text-pitch-deep"
+        badge={<span className="shrink-0 rounded-md bg-pitch-soft px-1.5 py-0.5 text-[11px] font-bold text-pitch-deep">{d.stats.picks}</span>}>
+        <SubCategory open title="Sélection SAM du jour" count={d.selection.length}
+          hint={`Probabilité d'au moins ${pct(s?.featured_min_probability ?? 0.72)}, confiance élevée, cote jouable${d.stats.selection_settled ? ` · bilan ${pct(d.stats.selection_hit_rate)} sur ${d.stats.selection_settled}` : ""}`}
+          action={<MoreLink href="/historique?selection=1">Bilan de la sélection</MoreLink>}>
+          {d.selection.length ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {d.selection.map((p) => <PickCard key={`s-${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} />)}
+            </div>
+          ) : (
+            <Empty title="Aucun pronostic n'atteint les critères de la sélection pour le moment">
+              Mieux vaut ne rien proposer qu&apos;un pronostic fragile.
+            </Empty>
+          )}
+        </SubCategory>
+        <SubCategory open={d.value_picks.length > 0} title="Pronostics à cote" count={d.value_picks.length}
+          hint={`Cote ${num(d.value_settings.value_min_odds)} à ${num(d.value_settings.value_max_odds)}, grands championnats, probabilité ≥ ${pct(d.value_settings.value_min_probability)}${d.stats.value_settled ? ` · bilan ${pct(d.stats.value_hit_rate)} sur ${d.stats.value_settled}` : ""}`}
+          action={<MoreLink href="/historique?cote=1">Bilan des pronostics à cote</MoreLink>}>
+          {d.value_picks.length ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {d.value_picks.map((p) => <PickCard key={`v-${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} />)}
+            </div>
+          ) : (
+            <Empty title="Aucun pronostic à cote ne remplit les critères pour le moment" />
+          )}
+        </SubCategory>
+        <SubCategory title="Top 5 des plus fiables" count={d.top5.length} hint="Un pronostic par match, probabilité et confiance combinées"
+          action={<MoreLink href="/pronostics?sort=probability">Tous les pronostics</MoreLink>}>
+          {d.top5.length ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {d.top5.map((p, i) => <PickCard key={`${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} rank={i + 1} />)}
+            </div>
+          ) : (
+            <Empty title="Aucune sélection ne passe les critères" />
+          )}
+        </SubCategory>
+        <SubCategory title="Meilleurs pronostics du jour" count={d.best_today.length} hint="Matchs d'aujourd'hui uniquement"
+          action={<MoreLink href="/pronostics?best=1">Voir les meilleurs</MoreLink>}>
+          {d.best_today.length ? (
+            <List>{d.best_today.slice(0, 8).map((p) => <CompactPick key={`${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} />)}</List>
+          ) : (
+            <Empty title="Pas de pronostic retenu aujourd'hui">Consultez les prochains jours dans l&apos;onglet Pronostics.</Empty>
+          )}
+        </SubCategory>
+      </Category>
+
+      <Category id="combines" title="Combinés" subtitle="Cote 2 avec 2 ou 3 matchs seulement" icon={IC.combo} tone="bg-sky-soft text-sky"
+        badge={<span className="shrink-0 rounded-md bg-sky-soft px-1.5 py-0.5 text-[11px] font-bold text-sky">{d.combo_of_day.length}</span>}>
+        <p className="mb-2 px-1 text-[12.5px] text-steel">La même cote qu&apos;un combiné de 8 à 10 matchs, avec bien moins de risques de surprise. Matchs des 36 prochaines heures.</p>
         {d.combo_of_day.length ? (
           <div className="grid gap-3 md:grid-cols-2">
-            {d.combo_of_day.map((c, i) => (
-              <ComboView key={i} c={c} tz={tz} title={i === 0 ? `Combiné principal : ${c.n_legs} matchs` : `Alternative : ${c.n_legs} matchs`} />
-            ))}
+            {d.combo_of_day.map((c, i) => <ComboView key={i} c={c} tz={tz} title={i === 0 ? `Combiné principal : ${c.n_legs} matchs` : `Alternative : ${c.n_legs} matchs`} />)}
           </div>
         ) : (
           <Empty title="Pas de combinaison assez solide pour atteindre une cote de 2 en ce moment" />
         )}
-      </Section>
+        <div className="mt-2 text-right"><MoreLink href="/combines">Choisir une autre cote</MoreLink></div>
+      </Category>
 
-      <Section title="Pronostics à cote" action={<MoreLink href="/historique?cote=1">Bilan</MoreLink>}>
-        <p className="-mt-1 mb-3 px-1 text-sm text-steel">
-          Cote d&apos;environ {num(d.value_settings.value_min_odds)} à {num(d.value_settings.value_max_odds)}, probabilité d&apos;au
-          moins {pct(d.value_settings.value_min_probability)}, confiance d&apos;au moins {d.value_settings.value_min_confidence}/100 et
-          modèle d&apos;accord avec le marché. Plus rémunérateurs, donc un peu moins sûrs que la Sélection SAM.
-          {d.stats.value_settled
-            ? ` Bilan réel : ${pct(d.stats.value_hit_rate)} sur ${d.stats.value_settled} pronostics réglés.`
-            : ""}
-        </p>
-        {d.value_picks.length ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {d.value_picks.map((p) => (
-              <PickCard key={`v-${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} />
-            ))}
-          </div>
-        ) : (
-          <Empty title="Aucun pronostic à cote ne remplit les critères pour le moment" />
-        )}
-      </Section>
-
-
-      <Section title="Derniers résultats vérifiés" action={<MoreLink href="/historique">Bilan complet</MoreLink>}>
-        {recent.ok && (recent.data.waiting.length || recent.data.settled.length) ? (
-          <List>
-            {[...recent.data.waiting, ...recent.data.settled].slice(0, 10).map((h) => (
-              <Link key={h.id} href={`/matchs/${h.match.id}`} className="flex items-center gap-3 px-4 py-3">
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-semibold">
-                    {h.match.home.name} – {h.match.away.name}
-                    {h.match.score && <span className="ml-1.5 text-steel">{h.match.score.home}-{h.match.score.away}</span>}
-                  </div>
-                  <div className="truncate text-xs text-steel">{h.market_label}, {pct(h.probability)}, {kickoffLabel(h.match.kickoff, tz)}</div>
-                </div>
-                <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold ${
-                  h.result === "won" ? "bg-pitch-soft text-pitch-deep" : h.result === "lost" ? "bg-brick-soft text-brick" : "bg-amber-soft text-amber"}`}>
-                  {h.result === "pending" ? "Résultat en attente" : RESULT_LABEL[h.result] ?? h.result}
-                </span>
-              </Link>
-            ))}
-          </List>
-        ) : (
-          <Empty title="Aucun pronostic terminé pour le moment" />
-        )}
-      </Section>
-
-      <Section title="Top 5 des sélections les plus fiables" action={<MoreLink href="/pronostics?sort=probability">Tout voir</MoreLink>}>
-        {d.top5.length ? (
-          <div className="grid gap-3 md:grid-cols-2">
-            {d.top5.map((p, i) => (
-              <PickCard key={`${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} rank={i + 1} />
-            ))}
-          </div>
-        ) : (
-          <Empty title="Aucune sélection ne passe les critères">
-            Le moteur préfère ne rien proposer plutôt qu&apos;un pronostic fragile. Revenez après la prochaine synchronisation.
-          </Empty>
-        )}
-      </Section>
-
-      <div className="grid gap-x-6 md:grid-cols-2">
-        <Section title="Meilleurs pronostics du jour">
-          {d.best_today.length ? (
-            <List>
-              {d.best_today.slice(0, 6).map((p) => (
-                <CompactPick key={`${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} />
-              ))}
-            </List>
-          ) : (
-            <Empty title="Pas de pronostic retenu aujourd'hui">Consultez les prochains jours dans l&apos;onglet Pronostics.</Empty>
-          )}
-        </Section>
-
-      </div>
-
-
-      <div className="grid gap-x-6 md:grid-cols-2">
-        <Section title="Matchs du jour">
-          {d.today_matches.length ? (
-            <List>
-              {d.today_matches.map((t) => (
-                <MatchRow
-                  key={t.match.id}
-                  match={t.match}
-                  tz={tz}
-                  right={
-                    t.status !== "ok" ? (
+      <Category id="jour" open={false} title="Matchs du jour" subtitle={`${d.today_matches.length} matchs · ${d.avoid.length} à éviter`}
+        icon={IC.calendar} tone="bg-mist text-night">
+        {todayGroups.length ? (
+          todayGroups.map((g, i) => (
+            <SubCategory key={g.code} open={i < 3 && g.popular} count={g.rows.length}
+              title={<><span className="mr-1.5" aria-hidden>{flag(g.country)}</span>{g.name}{g.popular ? <span className="ml-1 text-amber" aria-hidden>★</span> : null}</>}>
+              <List>
+                {g.rows.map((t) => (
+                  <MatchRow key={t.match.id} match={t.match} tz={tz}
+                    right={t.status !== "ok" ? (
                       <span className="shrink-0 rounded-md bg-mist px-2 py-0.5 text-[11px] text-steel">Données insuffisantes</span>
+                    ) : t.avoid ? (
+                      <span className="shrink-0 text-[11px] font-semibold text-brick">À éviter</span>
                     ) : t.n_picks ? (
-                      <span className="shrink-0 rounded-md bg-pitch-soft px-2 py-0.5 text-[11px] font-semibold text-pitch-deep">
-                        {t.n_picks} pronostic{t.n_picks > 1 ? "s" : ""}
-                      </span>
+                      <span className="shrink-0 rounded-md bg-pitch-soft px-2 py-0.5 text-[11px] font-semibold text-pitch-deep">{t.n_picks} prono.</span>
                     ) : (
                       <span className="shrink-0 text-[11px] text-steel">Aucun retenu</span>
-                    )
-                  }
-                />
-              ))}
-            </List>
-          ) : (
-            <Empty title="Aucun match aujourd'hui dans les championnats suivis" />
-          )}
-        </Section>
-
-        <Section title="Matchs à éviter">
-          {d.avoid.length ? (
+                    )} />
+                ))}
+              </List>
+            </SubCategory>
+          ))
+        ) : (
+          <Empty title="Aucun match aujourd'hui dans les championnats suivis" />
+        )}
+        {d.avoid.length > 0 && (
+          <SubCategory title={<span className="text-brick">Matchs à éviter</span>} count={d.avoid.length} hint="Données fragiles ou trop d'incertitude">
             <List>
               {d.avoid.map((a) => (
                 <div key={a.match.id}>
                   <MatchRow match={a.match} tz={tz} />
-                  <ul className="-mt-1.5 space-y-0.5 px-4 pb-3 pl-[76px] text-xs text-brick">
-                    {a.reasons.map((r) => (
-                      <li key={r}>{r}</li>
-                    ))}
-                  </ul>
+                  <ul className="-mt-1.5 space-y-0.5 px-4 pb-3 pl-[76px] text-xs text-brick">{a.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
                 </div>
               ))}
             </List>
-          ) : (
-            <Empty title="Aucun match signalé" />
-          )}
-        </Section>
-      </div>
+          </SubCategory>
+        )}
+        <div className="mt-2 text-right"><MoreLink href="/matchs">Calendrier complet</MoreLink></div>
+      </Category>
 
+      <Category id="bilan" open={false} title="Bilan et résultats" subtitle={settled ? `${pct(d.stats.history_hit_rate)} de réussite sur ${settled} pronostics réglés` : "Aucun pronostic réglé pour le moment"}
+        icon={IC.trend} tone="bg-pitch text-white">
+        <div className="grid grid-cols-3 gap-2">
+          {[
+            ["Tous", d.stats.history_hit_rate, d.stats.history_settled],
+            ["Sélection SAM", d.stats.selection_hit_rate, d.stats.selection_settled],
+            ["À cote", d.stats.value_hit_rate, d.stats.value_settled],
+          ].map(([l, r, n]) => (
+            <div key={String(l)} className="rounded-xl border border-line bg-white px-2.5 py-2 text-center">
+              <div className="text-[11px] text-steel">{String(l)}</div>
+              <div className="font-display text-lg font-bold">{n ? pct(r as number | null) : "—"}</div>
+              <div className="text-[10.5px] text-steel">{n ? `${n} réglés` : "en attente"}</div>
+            </div>
+          ))}
+        </div>
+        <SubCategory open title="Derniers résultats vérifiés" action={<MoreLink href="/historique">Bilan complet</MoreLink>}>
+          {recent.ok && (recent.data.waiting.length || recent.data.settled.length) ? (
+            <List>
+              {[...recent.data.waiting, ...recent.data.settled].slice(0, 10).map((h) => (
+                <Link key={h.id} href={`/matchs/${h.match.id}`} className="flex items-center gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm font-semibold">
+                      {h.match.home.name} – {h.match.away.name}
+                      {h.match.score && <span className="ml-1.5 text-steel">{h.match.score.home}-{h.match.score.away}</span>}
+                    </div>
+                    <div className="truncate text-xs text-steel">{h.market_label}, {pct(h.probability)}, {kickoffLabel(h.match.kickoff, tz)}</div>
+                  </div>
+                  <span className={`shrink-0 rounded-md px-2 py-0.5 text-xs font-semibold ${
+                    h.result === "won" ? "bg-pitch-soft text-pitch-deep" : h.result === "lost" ? "bg-brick-soft text-brick" : "bg-amber-soft text-amber"}`}>
+                    {h.result === "pending" ? "Résultat en attente" : RESULT_LABEL[h.result] ?? h.result}
+                  </span>
+                </Link>
+              ))}
+            </List>
+          ) : (
+            <Empty title="Aucun pronostic terminé pour le moment" />
+          )}
+        </SubCategory>
+      </Category>
     </>
   );
 }
