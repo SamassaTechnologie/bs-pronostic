@@ -1014,3 +1014,43 @@ def test_response_cache(client, monkeypatch):
     assert "x-cache" not in client.get("/api/live").headers
     assert client.get("/api/meta", headers={"X-Cache-Refresh": "1"}).headers.get("x-cache") == "MISS"
     rc.reset()
+
+
+def test_machine_generator(populated, client, monkeypatch):
+    """Machine SAM : sélections conformes aux critères (événement, cote, probabilité, statistiques réelles), un match
+    au plus une fois, cote totale = produit des cotes, cote cible atteinte ou aucune proposition."""
+    import app.api.catalog as cat
+    with SessionLocal() as db:  # la journée analysée redevient « à venir » le temps du test
+        ms = db.scalars(select(Match).join(Analysis, Analysis.match_id == Match.id).where(
+            Match.kickoff >= NOW)).unique().all()
+        saved = {m.id: m.status for m in ms}
+        for m in ms:
+            m.status = "SCHEDULED"
+        db.commit()
+    monkeypatch.setattr(cat, "_now", lambda: NOW)
+    opts = client.get("/api/machine/options").json()
+    assert any(e["key"] == "BTTS_Y" for e in opts["events"]) and opts["competitions"]
+    r = client.post("/api/machine", json={"events": ["O1.5", "1X", "X2", "O2.5"], "days": 3, "n_matches": 4,
+                                          "min_odds": 1.05, "max_odds": 5, "min_probability": 0.55, "min_confidence": 0}).json()
+    assert r["matches_scanned"] > 0 and 1 <= r["count"] <= 4
+    ids = [s["match"]["id"] for s in r["selections"]]
+    assert len(ids) == len(set(ids))
+    for s in r["selections"]:
+        assert s["market_key"] in ("O1.5", "1X", "X2", "O2.5") and s["probability"] >= 0.55 and 1.05 <= s["odds"] <= 5
+    if r["selections"]:
+        import math
+        assert abs(r["total_odds"] - math.prod(s["odds"] for s in r["selections"])) < 0.05
+    s = client.post("/api/machine", json={"events": ["O1.5"], "days": 3, "min_odds": 1.01, "max_odds": 9,
+                                          "min_probability": 0.5, "min_confidence": 0, "last10_pct": 0.6, "venue_pct": 0.5}).json()
+    for x in s["selections"]:
+        f = x["facts"]
+        assert f["last10"]["home"] >= 0.6 and f["last10"]["away"] >= 0.6 and f["venue"]["home"] >= 0.5
+        assert f["last10"]["n_home"] >= 5
+    t = client.post("/api/machine", json={"events": ["O1.5", "1X", "X2"], "days": 3, "n_matches": 6, "target_odds": 2.0,
+                                          "min_odds": 1.05, "max_odds": 5, "min_probability": 0.55, "min_confidence": 0}).json()
+    assert t["target_reached"] is False or t["total_odds"] >= 2.0
+    assert client.post("/api/machine", json={"min_odds": 3, "max_odds": 2}).status_code == 422
+    with SessionLocal() as db:
+        for m in db.scalars(select(Match).where(Match.id.in_(list(saved)))).all():
+            m.status = saved[m.id]
+        db.commit()

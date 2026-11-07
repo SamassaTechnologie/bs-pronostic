@@ -474,3 +474,40 @@ def stats_market(market: str, competition: Optional[str] = None, min_probability
             "scope": comp_row(comps[0]) if competition else None,
             "league_rate": rate(league["yes"], league["n"]), "league_n": league["n"],
             "teams": teams[:40], "teams_total": len(teams), "upcoming": upcoming[:40]}
+
+
+# --- Machine SAM : générateur de pronostics à critères ------------------------------------------------------------
+class MachineIn(BaseModel):
+    events: list[str] = Field(default_factory=lambda: ["O1.5", "1X", "X2"], max_length=20)
+    days: int = Field(1, ge=1, le=3)
+    competitions: list[str] = Field(default_factory=list, max_length=40)
+    popular_only: bool = False
+    n_matches: int = Field(5, ge=1, le=20)
+    min_odds: float = Field(1.20, ge=1.01, le=20)
+    max_odds: float = Field(3.0, ge=1.01, le=50)
+    target_odds: Optional[float] = Field(None, ge=1.1, le=1000)
+    min_probability: float = Field(0.60, ge=0.3, le=0.99)
+    min_confidence: int = Field(55, ge=0, le=100)
+    last10_pct: Optional[float] = Field(None, ge=0, le=1)
+    venue_pct: Optional[float] = Field(None, ge=0, le=1)
+    h2h_pct: Optional[float] = Field(None, ge=0, le=1)
+    min_avg_scored: Optional[float] = Field(None, ge=0, le=6)
+    max_avg_conceded: Optional[float] = Field(None, ge=0, le=6)
+    sort: str = Field("probability", pattern="^(probability|odds|confidence|kickoff)$")
+
+
+@router.get("/machine/options")
+def machine_options(db: Session = Depends(get_db)):
+    from ..popular import rank
+    from ..services.machine import EVENTS
+    comps = db.scalars(select(Competition).where(Competition.enabled.is_(True))).all()
+    return {"events": [{"key": k, "label": v} for k, v in EVENTS.items()],
+            "competitions": sorted((comp_row(c) for c in comps), key=lambda c: (rank(c["code"]), c["name"]))}
+
+
+@router.post("/machine")
+def machine(body: MachineIn, db: Session = Depends(get_db)):
+    from ..services.machine import generate
+    if body.min_odds > body.max_odds:
+        raise HTTPException(422, "La cote minimale doit être inférieure à la cote maximale")
+    return generate(db, _now(), **body.model_dump())

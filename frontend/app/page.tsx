@@ -151,7 +151,7 @@ export default async function Home() {
           meta.data?.ai?.assistant !== false
             ? { href: "/assistant", label: "Assistant IA", icon: "M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z", tone: "bg-night text-white" }
             : { href: "/historique", label: "Bilan", icon: "M4 19V5M4 19h16M8 15l3-4 3 2 4-6", tone: "bg-night text-white" },
-          { href: "/combines", label: "Combinés", icon: "M4 7h16M4 12h16M4 17h10", tone: "bg-amber-soft text-amber" },
+          { href: "/machine", label: "Machine SAM", icon: "M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0M14 4v4M8 10v4M16 16v4", tone: "bg-amber-soft text-amber" },
         ].map((a) => (
           <Link key={a.href} href={a.href} className="flex flex-col items-center gap-1.5 rounded-xl border border-line bg-white px-1 py-3 text-center">
             <span className={`flex h-10 w-10 items-center justify-center rounded-full ${a.tone}`}>

@@ -50,3 +50,8 @@ export function useCoupon() {
   const total = items.reduce((t, s) => t * s.odds, 1);
   return { items, has, toggle, remove, clear, total };
 }
+
+/** Remplace tout le coupon (Machine SAM → « Jouer ce coupon »), 10 sélections au plus. */
+export function replaceCoupon(list: CouponSel[]) {
+  write(list.slice(0, 10));
+}
