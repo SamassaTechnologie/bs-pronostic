@@ -32,6 +32,8 @@ type Dashboard = {
   };
   selection: Pick[];
   value_picks: Pick[];
+  combo_picks?: Pick[];
+  combo_performance?: { total: number; n: number; won: number; hit_rate: number | null; avg_probability: number | null };
   value_settings: { value_min_odds: number; value_max_odds: number; value_min_probability: number; value_min_confidence: number; value_max_per_day: number };
   combo_of_day: Combo[];
   today_matches: { match: MatchSummary; status: string; n_picks: number; match_confidence: number; avoid: boolean }[];
@@ -257,6 +259,19 @@ export default async function Home() {
             </div>
           ) : (
             <Empty title="Aucun pronostic à cote ne remplit les critères pour le moment" />
+          )}
+        </SubCategory>
+        <SubCategory open={(d.combo_picks?.length ?? 0) > 0} title="Pronostics combinés" count={d.combo_picks?.length ?? 0}
+          hint={`Même match : résultat ou « les deux marquent » + buts, cote juste 1,60 à 3,20${d.combo_performance?.n ? ` · bilan ${pct(d.combo_performance.hit_rate)} sur ${d.combo_performance.n}` : ""}`}
+          action={<MoreLink href="/historique?combine=1">Bilan des pronostics combinés</MoreLink>}>
+          {d.combo_picks?.length ? (
+            <div className="grid gap-3 md:grid-cols-2">
+              {d.combo_picks.map((p) => <PickCard key={`c-${p.match.id}-${p.market_key}`} pick={p} tz={tz} thresholds={th} />)}
+            </div>
+          ) : (
+            <Empty title="Aucun pronostic combiné ne remplit les critères pour le moment">
+              Chaque combiné est calculé sur le modèle de buts et validé hors échantillon ; rien n&apos;est proposé au hasard.
+            </Empty>
           )}
         </SubCategory>
         <SubCategory title="Top 5 des plus fiables" count={d.top5.length} hint="Un pronostic par match, probabilité et confiance combinées"

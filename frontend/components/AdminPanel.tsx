@@ -20,6 +20,9 @@ const NUMERIC_SETTINGS: [string, string, number][] = [
   ["min_fair_odds", "Cote juste minimale", 0.01], ["max_picks_per_match", "Pronostics max. par match", 1],
   ["max_daily_picks", "Pronostics max. par jour", 1], ["days_ahead", "Jours analysés à l'avance", 1],
   ["avoid_confidence_below", "« À éviter » si confiance max. sous", 1], ["market_divergence_alert", "Alerte écart modèle/marché", 0.01],
+  ["combo_min_probability", "Combinés : probabilité minimale", 0.01], ["combo_min_confidence", "Combinés : confiance minimale (/100)", 1],
+  ["combo_min_odds", "Combinés : cote juste minimale", 0.05], ["combo_max_odds", "Combinés : cote juste maximale", 0.05],
+  ["combo_max_per_day", "Combinés : maximum par jour", 1],
 ];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {

@@ -184,6 +184,7 @@ class Prediction(Base):
     explanation: Mapped[Optional[str]] = mapped_column(Text)
     featured: Mapped[bool] = mapped_column(Boolean, default=False, index=True)  # Sélection SAM du jour
     featured_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime)
+    combo_pick: Mapped[bool] = mapped_column(Boolean, default=False)  # pronostic combiné (même match)
     value_pick: Mapped[bool] = mapped_column(Boolean, default=False, index=True)  # Pronostic à cote
     result: Mapped[str] = mapped_column(String(16), default="pending", index=True)
     settled_at: Mapped[Optional[datetime]] = mapped_column(UTCDateTime)

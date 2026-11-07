@@ -87,6 +87,53 @@ def extended_markets(payload: dict, settings: dict, home: str, away: str) -> lis
     return out
 
 
+def combo_markets(payload: dict, settings: dict) -> list[dict]:
+    """Marchés combinés du même match (famille « Résultat + buts »), validés et calibrés, dans la zone de cote des
+    pronostics combinés ; forme identique aux marchés principaux."""
+    eg = payload.get("expected_goals")
+    if payload.get("status") != "ok" or not eg or not validated():
+        return []
+    m = payload.get("match") or {}
+    home, away = (m.get("home") or {}).get("name", "Équipe 1"), (m.get("away") or {}).get("name", "Équipe 2")
+    rho = (payload.get("league") or {}).get("rho", 0.0) or 0.0
+    ht = payload.get("expected_ht_goals")
+    rows = ext.compute(score_matrix(eg["home"], eg["away"], rho), eg["home"], eg["away"],
+                       (ht["home"], ht["away"]) if ht else None)
+    mks = {x["key"]: x for x in payload.get("markets", []) if x.get("available") and not x.get("extended")}
+    ref = mks.get("O2.5") or mks.get("1")
+    if ref is None:
+        return []
+    lo_p, lo_o, hi_o = float(settings["combo_min_probability"]), float(settings["combo_min_odds"]), float(settings["combo_max_odds"])
+    out = []
+    for r in rows:
+        if r["family"] != "res_combo" or r["void_probability"] > 0:
+            continue
+        p = calibrate(r["key"], r["probability"])
+        if p is None:
+            continue
+        p = float(np.clip(p, 0.001, 0.999))
+        if p < lo_p or not lo_o <= 1 / p <= hi_o:
+            continue
+        conf = dict(ref["confidence"])
+        conf["score"] = max(0, int(conf["score"]) - 5)
+        conf["level"] = level_of(conf["score"])
+        v = validated()[r["key"]]
+        label = r["label"].replace("{E1}", home).replace("{E2}", away)
+        mk = {"key": r["key"], "label": label, "short": r["label"].replace("{E1}", "1").replace("{E2}", "2"),
+              "family": r["family"], "group": "x:res_combo", "available": True,
+              "extended": True, "probability": round(p, 4), "raw_probability": r["probability"],
+              "model_probability": round(p, 4), "consensus": False, "tier": tier_of(p, settings), "confidence": conf,
+              "odds": None, "bookmaker": None, "odds_source": None, "implied_probability": None, "edge": None,
+              "fair_odds": round(1 / p, 3), "recent": {},
+              "explanation": (f"Pronostic combiné calculé sur le modèle de buts SAM : probabilité {round(p * 100)} %, "
+                              f"cote juste {round(1 / p, 2)}. Calibration vérifiée hors échantillon sur {v['n_test']} "
+                              f"matchs (écart moyen {round(v['ece_cal'] * 100, 1)} point(s))."),
+              "factors_for": [], "factors_against": []}
+        mk["score"] = selection_score(mk)
+        out.append(mk)
+    return out
+
+
 def add_to_payload(payload: dict, settings: dict) -> None:
     """Ajoute les marchés étendus validés et autorise au plus UN pronostic étendu par match, retenu seulement s'il
     est plus solide que les pronostics principaux restants."""

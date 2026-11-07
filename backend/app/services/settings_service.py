@@ -12,6 +12,8 @@ from ..models import Setting
 PROVIDER_NAMES = ("football_data_co_uk", "api_football", "football_data_org", "allsports")
 
 BOUNDS = {
+    "combo_min_probability": (0.35, 0.9), "combo_min_confidence": (40, 95), "combo_min_odds": (1.2, 5.0),
+    "combo_max_odds": (1.5, 10.0), "combo_max_per_day": (0, 10),
     "tier_a": (0.5, 0.99), "tier_b": (0.5, 0.99), "tier_c": (0.5, 0.99),
     "min_probability": (0.5, 0.99), "min_confidence": (0, 100), "min_fair_odds": (1.0, 3.0),
     "max_picks_per_match": (1, 5), "max_daily_picks": (1, 200), "days_ahead": (1, 7),

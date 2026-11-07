@@ -81,6 +81,14 @@ def _catalog() -> list[XMarket]:
         for over in (True, False):
             add(f"e:{r}&T{'O' if over else 'U'}2.5", f"{res_lbl[r]} et {'plus' if over else 'moins'} de 2,5 buts",
                 "res_combo", ft(lambda h, a, r=r, o=over: _b(_res(h, a, r) & (((h + a) > 2.5) == o))))
+    # Les deux équipes marquent + total de buts
+    for yes in (True, False):
+        for line in (2.5, 3.5):
+            for over in (True, False):
+                add(f"e:B{'Y' if yes else 'N'}&T{'O' if over else 'U'}{line}",
+                    f"Les deux marquent : {'oui' if yes else 'non'} et {'plus' if over else 'moins'} de "
+                    f"{str(line).replace('.', ',')} buts", "res_combo",
+                    ft(lambda h, a, y=yes, o=over, l=line: _b((((h > 0) & (a > 0)) == y) & (((h + a) > l) == o))))
     # Victoire + total de l'équipe (V1 + Total 1)
     for t, side in (("1", 0), ("2", 1)):
         for line in (1.5, 2.5):

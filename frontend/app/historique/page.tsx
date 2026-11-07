@@ -51,12 +51,13 @@ function Breakdown({ rows }: { rows: GroupStat[] }) {
   );
 }
 
-export default async function Historique({ searchParams }: { searchParams: Promise<{ page?: string; resultat?: string; selection?: string; cote?: string }> }) {
+export default async function Historique({ searchParams }: { searchParams: Promise<{ page?: string; resultat?: string; selection?: string; cote?: string; combine?: string }> }) {
   const sp = await searchParams;
   const sel = sp.selection === "1";
   const cote = !sel && sp.cote === "1";
-  const fq = sel ? "featured=true" : cote ? "value=true" : "";
-  const keep = sel ? "&selection=1" : cote ? "&cote=1" : "";
+  const comb = !sel && !cote && sp.combine === "1";
+  const fq = sel ? "featured=true" : cote ? "value=true" : comb ? "combo=true" : "";
+  const keep = sel ? "&selection=1" : cote ? "&cote=1" : comb ? "&combine=1" : "";
   const tz = await userTz();
   const page = Math.max(0, Number(sp.page || 0));
   const filter = sp.resultat && RESULT_LABEL[sp.resultat] ? sp.resultat : "";
@@ -78,14 +79,17 @@ export default async function Historique({ searchParams }: { searchParams: Promi
         </p>
       </div>
 
-      <div className="mb-4 grid grid-cols-3 gap-1 rounded-lg bg-white p-1" role="tablist">
+      <div className="mb-4 grid grid-cols-4 gap-1 rounded-lg bg-white p-1" role="tablist">
         <Link href="/historique?selection=1" role="tab" aria-selected={sel} className={`rounded-md py-2 text-center text-sm font-bold ${sel ? "bg-night text-white" : "text-steel"}`}>
-          Sélection SAM
+          Sélection
         </Link>
         <Link href="/historique?cote=1" role="tab" aria-selected={cote} className={`rounded-md py-2 text-center text-sm font-bold ${cote ? "bg-night text-white" : "text-steel"}`}>
           À cote
         </Link>
-        <Link href="/historique" role="tab" aria-selected={!sel && !cote} className={`rounded-md py-2 text-center text-sm font-bold ${!sel && !cote ? "bg-night text-white" : "text-steel"}`}>
+        <Link href="/historique?combine=1" role="tab" aria-selected={comb} className={`rounded-md py-2 text-center text-sm font-bold ${comb ? "bg-night text-white" : "text-steel"}`}>
+          Combinés
+        </Link>
+        <Link href="/historique" role="tab" aria-selected={!sel && !cote && !comb} className={`rounded-md py-2 text-center text-sm font-bold ${!sel && !cote && !comb ? "bg-night text-white" : "text-steel"}`}>
           Tous
         </Link>
       </div>
@@ -152,7 +156,7 @@ export default async function Historique({ searchParams }: { searchParams: Promi
       <Section title="Tous les pronostics">
         <div className="scroll-x mb-3 flex gap-1.5">
           {[["", "Tous"], ["won", "Gagnés"], ["lost", "Perdus"], ["pending", "En attente"]].map(([v, l]) => (
-            <Link key={v} href={`/historique?${new URLSearchParams({ ...(v ? { resultat: v } : {}), ...(sel ? { selection: "1" } : {}), ...(cote ? { cote: "1" } : {}) })}`} className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold ${filter === v ? "bg-night text-white" : "bg-white text-night"}`}>
+            <Link key={v} href={`/historique?${new URLSearchParams({ ...(v ? { resultat: v } : {}), ...(sel ? { selection: "1" } : {}), ...(cote ? { cote: "1" } : {}), ...(comb ? { combine: "1" } : {}) })}`} className={`shrink-0 rounded-lg px-3 py-1.5 text-sm font-semibold ${filter === v ? "bg-night text-white" : "bg-white text-night"}`}>
               {l}
             </Link>
           ))}

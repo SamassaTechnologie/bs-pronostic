@@ -36,6 +36,7 @@ export type PickCard = {
   is_pick: boolean;
   featured?: boolean;
   value_pick?: boolean;
+  combo_pick?: boolean;
   reference_odds?: number;
   bookmaker_odds?: boolean;
   model_probability?: number;
@@ -90,6 +91,7 @@ export type Analysis = {
   expected_corners?: { home: number; away: number } | null;
   expected_cards?: { home: number; away: number } | null;
   top_scores?: { score: string; probability: number }[];
+  combos?: Market[];
   form: { home: Record<string, FormBlock>; away: Record<string, FormBlock> };
   h2h: { n: number; home_team_wins?: number; away_team_wins?: number; draws?: number; avg_total_goals?: number; over25_rate?: number; btts_rate?: number; matches: { date: string; home_id: number; away_id: number; score: string }[] };
   standings: { home: { position: number; points: number; played: number } | null; away: { position: number; points: number; played: number } | null; teams: number } | null;

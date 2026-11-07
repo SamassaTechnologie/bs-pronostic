@@ -31,6 +31,7 @@ export function PickCard({ pick, tz, thresholds, rank, showFair = true }: { pick
             <div className="font-display text-3xl font-bold tracking-tight text-night">{pct(pick.probability)}</div>
             {pick.featured && <div className="text-[11px] font-bold text-pitch-deep">Sélection SAM</div>}
             {pick.value_pick && !pick.featured && <div className="text-[11px] font-bold text-amber">Pronostic à cote</div>}
+            {pick.combo_pick && <div className="text-[11px] font-bold text-sky">Pronostic combiné</div>}
           </div>
         </div>
         <div className="mt-2.5">

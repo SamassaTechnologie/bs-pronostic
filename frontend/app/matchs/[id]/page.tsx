@@ -348,6 +348,23 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
             </Section>
           )}
 
+          {a?.status === "ok" && a.combos && a.combos.length > 0 && (
+            <Section title="Pronostics combinés">
+              <p className="mb-2 px-1 text-[12.5px] text-steel">Deux conditions sur ce même match, toutes deux nécessaires. Probabilités calibrées ; la cote affichée est la cote juste calculée, pas une cote de bookmaker.</p>
+              <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-white">
+                {a.combos.slice(0, 6).map((c) => (
+                  <li key={c.key} className="flex items-center justify-between gap-3 px-3.5 py-2.5">
+                    <span className="min-w-0 text-[14px] font-semibold leading-snug">{c.label}</span>
+                    <span className="shrink-0 text-right">
+                      <span className="block font-display text-[17px] font-bold tabular-nums">{pct(c.probability)}</span>
+                      <span className="block text-[11.5px] text-steel tabular-nums">cote juste {num(c.fair_odds ?? 0)}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
+
           {a?.top_scores && a.status === "ok" && (
             <Section title="Scores les plus probables">
               <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">

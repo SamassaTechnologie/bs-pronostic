@@ -13,7 +13,7 @@ from ..engine.calibration import calibrators_from_dict, load_default_calibration
 from ..engine.features import TeamHistory, standings
 from ..engine.predictor import ENGINE_VERSION, EngineParams, FixtureContext, analyze_fixture, fit_league_models
 from ..engine.types import MatchData, OddsInfo
-from ..engine.extended_picks import add_to_payload as add_extended_markets
+from ..engine.extended_picks import add_to_payload as add_extended_markets, combo_markets
 from ..engine.value import best_value_per_match, value_score
 from ..popular import is_popular
 from ..models import Analysis, Calibration, Competition, Injury, Match, OddsQuote, Prediction, utcnow
@@ -123,6 +123,7 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
     stats = Counter()
     candidates: list[tuple[float, Match, dict]] = []
     value_cands: list[tuple[float, Match, dict]] = []
+    combo_cands: list[tuple[float, Match, dict]] = []
     from . import cup_pool
     pooling = cup_pool.enabled(db)
     for comp_id, ms in by_comp.items():
@@ -164,6 +165,8 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
             payload = analyze_fixture(lm, fx, history, cals, reliability, s, params)
             payload["match"] = match_summary(m)
             add_extended_markets(payload, s)
+            payload["combos"] = sorted(combo_markets(payload, s), key=lambda c: -c["probability"])[:10] \
+                if payload["status"] == "ok" and not payload.get("avoid_reasons") else []
             payload["calibration"] = {"source": cal_payload.get("source") or "aucune",
                                       "generated_at": cal_payload.get("generated_at")}
             a = db.scalar(select(Analysis).where(Analysis.match_id == m.id))
@@ -185,6 +188,10 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
                 vmk = best_value_per_match(payload["markets"], s)
                 if vmk is not None:
                     value_cands.append((value_score(vmk), m, vmk))
+                cms = [c for c in payload["combos"] if c["confidence"]["score"] >= int(s["combo_min_confidence"])]
+                if cms:
+                    best = cms[0]  # le plus probable dans la zone de cote 1,60 – 3,20
+                    combo_cands.append((best["score"], m, best))
         db.commit()
 
     published = 0
@@ -207,8 +214,11 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
         db.commit()
     featured = select_featured(db, candidates, s, now) if publish and candidates else 0
     value = select_value_picks(db, value_cands, s, now) if publish and value_cands else 0
+    combos = select_flagged_picks(db, combo_cands, s, now, "combo_pick", "combo_max_per_day", "combo_popular_only") \
+        if publish and combo_cands else 0
     return {"analysed": stats["analysed"], "ok": stats["ok"], "insufficient": stats["insufficient"],
             "competitions": len(by_comp), "published": published, "featured": featured, "value_picks": value,
+            "combo_picks": combos,
             "computed_at": now.isoformat()}
 
 
@@ -266,6 +276,42 @@ def select_featured(db: Session, candidates: list, s: dict, now: datetime) -> in
             continue
         pred.featured = True
         pred.featured_at = now
+        per_day[day] += 1
+        n += 1
+    db.commit()
+    return n
+
+
+def select_flagged_picks(db: Session, candidates: list, s: dict, now: datetime, flag: str, max_key: str,
+                         popular_key: str) -> int:
+    """Sélection générique figée avant le match (un par match, plafond quotidien, diversité des marchés)."""
+    col = getattr(Prediction, flag)
+    popular_only = bool(s.get(popular_key, True))
+    best = {m.id: (score, m, mk) for score, m, mk in candidates if m.kickoff > now + timedelta(minutes=10)
+            and (not popular_only or is_popular(m.competition.code))}
+    if not best:
+        return 0
+    days = {m.kickoff.date() for _, m, _ in best.values()}
+    per_day = Counter()
+    for p in db.scalars(select(Prediction).join(Match, Prediction.match_id == Match.id).where(
+            col.is_(True), Match.kickoff >= now - timedelta(days=2))).unique():
+        if p.match.kickoff.date() in days:
+            per_day[p.match.kickoff.date()] += 1
+    already = {p.match_id for p in db.scalars(select(Prediction).where(
+        col.is_(True), Prediction.match_id.in_(list(best)))).unique()}
+    n, per_market = 0, Counter()
+    for score, m, mk in sorted(best.values(), key=lambda t: (not is_popular(t[1].competition.code), -t[0])):
+        day = m.kickoff.date()
+        if m.id in already or per_day[day] >= int(s[max_key]) or per_market[(day, mk["key"])] >= 2:
+            continue
+        pred = db.scalar(select(Prediction).where(Prediction.match_id == m.id, Prediction.market_key == mk["key"]))
+        if pred is None:
+            pred = _new_prediction(m, mk, now)
+            db.add(pred)
+        elif pred.result != "pending":
+            continue
+        setattr(pred, flag, True)
+        per_market[(day, mk["key"])] += 1
         per_day[day] += 1
         n += 1
     db.commit()

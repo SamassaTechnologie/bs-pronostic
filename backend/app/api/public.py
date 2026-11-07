@@ -74,6 +74,19 @@ def _value_keys(db: Session, since: datetime) -> set:
         Match, Prediction.match_id == Match.id).where(Prediction.value_pick.is_(True), Match.kickoff >= since)).unique()}
 
 
+def _combo_keys(db: Session, since: datetime) -> set:
+    return {(p.match_id, p.market_key) for p in db.scalars(select(Prediction).join(
+        Match, Prediction.match_id == Match.id).where(Prediction.combo_pick.is_(True), Match.kickoff >= since)).unique()}
+
+
+def _combo_card(payload: dict, mk: dict) -> dict:
+    c = pick_card(payload, mk)
+    c["reference_odds"] = round(mk["fair_odds"], 2)
+    c["bookmaker_odds"] = False
+    c["combo_pick"] = True
+    return c
+
+
 def _value_card(payload: dict, mk: dict) -> dict:
     c = pick_card(payload, mk)
     odds, real = reference_odds(mk)
@@ -211,6 +224,11 @@ def dashboard(tz: Optional[str] = None, db: Session = Depends(get_db)):
                 value_picks.append(_value_card(a.payload, mk))
     value_picks.sort(key=lambda c: c["match"]["kickoff"])
     value_perf = performance(db, value=True)["overall"]
+    combo_keys = _combo_keys(db, now)
+    combo_picks = [_combo_card(a.payload, mk) for a in analyses if a.match.kickoff >= now
+                   for mk in a.payload.get("combos") or [] if (a.match_id, mk["key"]) in combo_keys]
+    combo_picks.sort(key=lambda c: c["match"]["kickoff"])
+    combo_perf = performance(db, combo=True)["overall"]
     soon = [a for a in analyses if now < a.match.kickoff < now + timedelta(hours=36)]
     combo_day = target_combos(_target_legs(soon, s, now), target=2.0, max_results=2)
     latest = db.scalars(select(Analysis).order_by(Analysis.computed_at.desc(), Analysis.id.desc()).limit(8)).unique().all()
@@ -258,6 +276,8 @@ def dashboard(tz: Optional[str] = None, db: Session = Depends(get_db)):
                   "value_roi": value_perf["roi"], "value_avg_probability": value_perf["avg_probability"]},
         "selection": selection,
         "value_picks": value_picks,
+        "combo_picks": combo_picks,
+        "combo_performance": {k: combo_perf[k] for k in ("total", "n", "won", "hit_rate", "avg_probability")},
         "value_settings": {k: s[k] for k in ("value_min_odds", "value_max_odds", "value_min_probability",
                                              "value_min_confidence", "value_max_per_day")},
         "combo_of_day": combo_day,
@@ -505,8 +525,10 @@ def combos_evaluate(req: EvaluateRequest, db: Session = Depends(get_db)):
 @router.get("/history")
 def history(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), result: Optional[str] = None,
             market: Optional[str] = None, competition: Optional[int] = None, featured: bool = False,
-            value: bool = False, db: Session = Depends(get_db)):
+            value: bool = False, combo: bool = False, db: Session = Depends(get_db)):
     q = select(Prediction).join(Match, Prediction.match_id == Match.id)
+    if combo:
+        q = q.where(Prediction.combo_pick.is_(True))
     if featured:
         q = q.where(Prediction.featured.is_(True))
     if value:
@@ -525,10 +547,10 @@ def history(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), 
 @router.get("/performance")
 def performance_endpoint(date_from: Optional[date] = None, date_to: Optional[date] = None,
                          competition: Optional[int] = None, featured: bool = False, value: bool = False,
-                         db: Session = Depends(get_db)):
+                         combo: bool = False, db: Session = Depends(get_db)):
     df = datetime.combine(date_from, time(0), tzinfo=UTC) if date_from else None
     dt = datetime.combine(date_to, time(0), tzinfo=UTC) + timedelta(days=1) if date_to else None
-    return performance(db, df, dt, competition, featured, value)
+    return performance(db, df, dt, competition, featured, value, combo)
 
 
 @router.get("/calibration")

@@ -832,3 +832,29 @@ def test_web_sources_freshness():
                                                  {"title": "Avant-match", "uri": f"https://e.com/{y}/11/b"},
                                                  {"title": f"Bilan {y - 1}", "uri": "https://e.com/c"}]})
     assert [s["title"] for s in mix["sources"]] == ["Sans date", "Avant-match"] and mix["text"] == "x"
+
+
+def test_combo_picks_same_match(populated, client):
+    """Pronostics combinés (résultat / les deux marquent + buts) : marchés validés, zone de cote 1,60 – 3,20,
+    un par match, au plus 4 par jour, exposés dans le tableau de bord, l'historique et la performance."""
+    from collections import Counter
+    from app.engine.extended_picks import validated
+    with SessionLocal() as db:
+        ans = db.scalars(select(Analysis)).all()
+        combos = [c for a in ans for c in a.payload.get("combos") or []]
+        assert combos, "aucun marché combiné calculé"
+        for c in combos:
+            assert c["family"] == "res_combo" and c["key"] in validated()
+            assert 0.50 <= c["probability"] and 1.60 <= c["fair_odds"] <= 3.20
+        assert {"e:BY&TO2.5", "e:12&TO2.5", "e:1&TO2.5", "e:2&TO2.5"} <= set(validated())  # combos demandés validés
+        preds = db.scalars(select(Prediction).where(Prediction.combo_pick.is_(True))).all()
+        assert preds, "aucun pronostic combiné publié"
+        assert len({p.match_id for p in preds}) == len(preds)
+        assert max(Counter(p.match.kickoff.date() for p in preds).values()) <= 4
+        assert all(p.market_key.startswith("e:") and p.confidence >= 70 for p in preds)
+    assert client.get("/api/history", params={"combo": True}).json()["total"] == len(preds)
+    assert client.get("/api/performance", params={"combo": True}).json()["overall"]["total"] == len(preds)
+    dash = client.get("/api/dashboard").json()
+    assert "combo_picks" in dash and "combo_performance" in dash
+    assert all(c["combo_pick"] and c["reference_odds"] >= 1.6 for c in dash["combo_picks"])
+
