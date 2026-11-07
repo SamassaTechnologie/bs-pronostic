@@ -33,7 +33,7 @@ export function Landing({ s }: { s: Summary | null }) {
             <Link href="/connexion?mode=inscription" className="rounded-xl bg-pitch px-5 py-3.5 text-center text-[15px] font-bold text-white">
               Créer mon compte gratuit
             </Link>
-            <Link href="/historique?selection=1" className="rounded-xl border border-white/25 px-5 py-3.5 text-center text-[15px] font-semibold text-white">
+            <Link href="/bilan" className="rounded-xl border border-white/25 px-5 py-3.5 text-center text-[15px] font-semibold text-white">
               Voir les résultats publiés
             </Link>
           </div>

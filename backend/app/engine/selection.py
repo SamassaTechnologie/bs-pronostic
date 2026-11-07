@@ -28,7 +28,12 @@ DEFAULT_SETTINGS: dict = {
     "combo_min_odds": 1.60,
     "combo_max_odds": 3.20,
     "combo_max_per_day": 4,
-    "combo_popular_only": True,  # pronostics à cote : grands championnats seulement (données et cotes plus sûres)
+    "combo_popular_only": True,
+    # Le banker du jour : un seul pronostic par jour, le plus solide des grands championnats
+    "banker_min_probability": 0.75,
+    "banker_min_confidence": 75,
+    "banker_per_day": 1,
+    "banker_popular_only": True,  # pronostics à cote : grands championnats seulement (données et cotes plus sûres)
     # Sélection SAM du jour : courte liste, critères renforcés
     "featured_min_probability": 0.72,
     "featured_min_confidence": 70,

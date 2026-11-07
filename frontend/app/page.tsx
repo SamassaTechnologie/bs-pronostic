@@ -13,6 +13,7 @@ import { Landing } from "@/components/Landing";
 import { currentMember } from "@/lib/supabase/server";
 import type { Combo, HistoryRow } from "@/lib/types";
 import { ComboView } from "@/components/ComboBuilder";
+import { BankerCard } from "@/components/BankerCard";
 import { num } from "@/lib/format";
 import { kickoffLabel, RESULT_LABEL } from "@/lib/format";
 
@@ -33,6 +34,8 @@ type Dashboard = {
   selection: Pick[];
   value_picks: Pick[];
   combo_picks?: Pick[];
+  bankers?: Pick[];
+  banker_performance?: { total: number; n: number; won: number; hit_rate: number | null; avg_probability: number | null };
   combo_performance?: { total: number; n: number; won: number; hit_rate: number | null; avg_probability: number | null };
   value_settings: { value_min_odds: number; value_max_odds: number; value_min_probability: number; value_min_confidence: number; value_max_per_day: number };
   combo_of_day: Combo[];
@@ -138,6 +141,8 @@ export default async function Home() {
           </p>
         )}
       </section>
+
+      {d.bankers?.[0] && <BankerCard pick={d.bankers[0]} perf={d.banker_performance} tz={tz} />}
 
       <nav className="mt-4 grid grid-cols-4 gap-2" aria-label="Accès rapides">
         {[
@@ -362,7 +367,7 @@ export default async function Home() {
             </div>
           ))}
         </div>
-        <SubCategory open title="Derniers résultats vérifiés" action={<MoreLink href="/historique">Bilan complet</MoreLink>}>
+        <SubCategory open title="Derniers résultats vérifiés" action={<MoreLink href="/bilan">Notre bilan complet</MoreLink>}>
           {recent.ok && (recent.data.waiting.length || recent.data.settled.length) ? (
             <List>
               {[...recent.data.waiting, ...recent.data.settled].slice(0, 10).map((h) => (

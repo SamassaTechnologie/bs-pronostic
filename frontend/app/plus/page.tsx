@@ -44,6 +44,7 @@ export default async function Plus() {
       </Section>
 
       <div className="mt-7 grid gap-2.5">
+        <Link href="/bilan" className="rounded-xl border border-line bg-white px-4 py-3.5 font-semibold">Notre bilan vérifié</Link>
         <Link href="/methodologie" className="rounded-xl border border-line bg-white px-4 py-3.5 font-semibold">Comment sont calculées les probabilités</Link>
         <Link href="/admin" className="rounded-xl border border-line bg-white px-4 py-3.5 font-semibold">Administration</Link>
       </div>

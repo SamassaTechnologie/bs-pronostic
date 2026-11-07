@@ -229,6 +229,18 @@ def dashboard(tz: Optional[str] = None, db: Session = Depends(get_db)):
                    for mk in a.payload.get("combos") or [] if (a.match_id, mk["key"]) in combo_keys]
     combo_picks.sort(key=lambda c: c["match"]["kickoff"])
     combo_perf = performance(db, combo=True)["overall"]
+    banker_rows = {p.match_id: p for p in db.scalars(select(Prediction).join(Match, Prediction.match_id == Match.id).where(
+        Prediction.banker.is_(True), Match.kickoff >= now - timedelta(hours=2))).unique()}
+    bankers = []
+    for a in analyses:
+        p = banker_rows.get(a.match_id)
+        mk = next((x for x in a.payload.get("markets", []) if p and x["key"] == p.market_key), None)
+        if mk:
+            c = pick_card(a.payload, mk)
+            c["banker"] = True
+            bankers.append(c)
+    bankers.sort(key=lambda c: c["match"]["kickoff"])
+    banker_perf = performance(db, banker=True)["overall"]
     soon = [a for a in analyses if now < a.match.kickoff < now + timedelta(hours=36)]
     combo_day = target_combos(_target_legs(soon, s, now), target=2.0, max_results=2)
     latest = db.scalars(select(Analysis).order_by(Analysis.computed_at.desc(), Analysis.id.desc()).limit(8)).unique().all()
@@ -277,6 +289,8 @@ def dashboard(tz: Optional[str] = None, db: Session = Depends(get_db)):
         "selection": selection,
         "value_picks": value_picks,
         "combo_picks": combo_picks,
+        "bankers": bankers[:2],
+        "banker_performance": {k: banker_perf[k] for k in ("total", "n", "won", "hit_rate", "avg_probability")},
         "combo_performance": {k: combo_perf[k] for k in ("total", "n", "won", "hit_rate", "avg_probability")},
         "value_settings": {k: s[k] for k in ("value_min_odds", "value_max_odds", "value_min_probability",
                                              "value_min_confidence", "value_max_per_day")},
@@ -525,8 +539,10 @@ def combos_evaluate(req: EvaluateRequest, db: Session = Depends(get_db)):
 @router.get("/history")
 def history(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), result: Optional[str] = None,
             market: Optional[str] = None, competition: Optional[int] = None, featured: bool = False,
-            value: bool = False, combo: bool = False, db: Session = Depends(get_db)):
+            value: bool = False, combo: bool = False, banker: bool = False, db: Session = Depends(get_db)):
     q = select(Prediction).join(Match, Prediction.match_id == Match.id)
+    if banker:
+        q = q.where(Prediction.banker.is_(True))
     if combo:
         q = q.where(Prediction.combo_pick.is_(True))
     if featured:
@@ -547,10 +563,46 @@ def history(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0), 
 @router.get("/performance")
 def performance_endpoint(date_from: Optional[date] = None, date_to: Optional[date] = None,
                          competition: Optional[int] = None, featured: bool = False, value: bool = False,
-                         combo: bool = False, db: Session = Depends(get_db)):
+                         combo: bool = False, banker: bool = False, db: Session = Depends(get_db)):
     df = datetime.combine(date_from, time(0), tzinfo=UTC) if date_from else None
     dt = datetime.combine(date_to, time(0), tzinfo=UTC) + timedelta(days=1) if date_to else None
-    return performance(db, df, dt, competition, featured, value, combo)
+    return performance(db, df, dt, competition, featured, value, combo, banker)
+
+
+@router.get("/track-record")
+def track_record(db: Session = Depends(get_db)):
+    """Bilan public : chiffres réels uniquement (pronostics figés avant le match, réglés sur les scores officiels)."""
+    now = _now()
+    keys = ("total", "n", "won", "lost", "hit_rate", "avg_probability", "gap", "pending", "staked", "roi")
+    cats = []
+    for key, label, hint, kw in (
+            ("banker", "Le banker du jour", "Un seul pronostic par jour, le plus solide", {"banker": True}),
+            ("selection", "Sélection SAM", "Les pronostics les plus sûrs, figés avant le match", {"featured": True}),
+            ("value", "Pronostics à cote", "Cote 1,40 à 2,20 dans les grands championnats", {"value": True}),
+            ("combo", "Pronostics combinés", "Deux conditions sur un même match", {"combo": True}),
+            ("all", "Tous les pronostics", "Chaque pronostic publié, sans exception", {})):
+        periods = {}
+        for pk, days in (("d7", 7), ("d30", 30), ("all", None)):
+            r = performance(db, now - timedelta(days=days) if days else None, None, None, **kw)["overall"]
+            periods[pk] = {k: r.get(k) for k in keys}
+        cats.append({"key": key, "label": label, "hint": hint, "periods": periods})
+    full = performance(db)
+    comps = [c for c in full["by_competition"] if c["n"] >= 10]
+    comps.sort(key=lambda c: -(c["hit_rate"] or 0))
+    fams = [f for f in full["by_family"] if f["n"] >= 10]
+    fams.sort(key=lambda f: -(f["hit_rate"] or 0))
+    last = db.scalars(select(Prediction).join(Match, Prediction.match_id == Match.id).where(
+        Prediction.banker.is_(True), Prediction.result.in_(["won", "lost"])).order_by(Match.kickoff.desc()).limit(10)).unique().all()
+    recent = db.scalars(select(Prediction).join(Match, Prediction.match_id == Match.id).where(
+        (Prediction.featured.is_(True)) | (Prediction.banker.is_(True)) | (Prediction.combo_pick.is_(True)),
+        Prediction.result.in_(["won", "lost"])).order_by(Match.kickoff.desc()).limit(15)).unique().all()
+    first = db.scalar(select(func.min(Prediction.created_at)))
+    return {"generated_at": now.isoformat(), "since": first.isoformat() if first else None, "categories": cats,
+            "calibration": full["calibration"]["table"], "brier": full["calibration"]["brier"],
+            "by_competition": [{k: c[k] for k in ("label", "n", "won", "hit_rate", "avg_probability")} for c in comps[:12]],
+            "by_family": [{k: f[k] for k in ("label", "n", "won", "hit_rate", "avg_probability")} for f in fams],
+            "banker_form": [p.result for p in reversed(last)],
+            "recent": [prediction_row(p) for p in recent]}
 
 
 @router.get("/calibration")

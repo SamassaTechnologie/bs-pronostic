@@ -214,11 +214,16 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
         db.commit()
     featured = select_featured(db, candidates, s, now) if publish and candidates else 0
     value = select_value_picks(db, value_cands, s, now) if publish and value_cands else 0
+    bk = [(sc, m, mk) for sc, m, mk in candidates if mk["probability"] >= float(s["banker_min_probability"])
+          and mk["confidence"]["score"] >= int(s["banker_min_confidence"])
+          and m.kickoff < now + timedelta(hours=36)]  # choisi la veille ou le jour même, sur des données fraîches
+    bankers = select_flagged_picks(db, bk, s, now, "banker", "banker_per_day", "banker_popular_only") \
+        if publish and bk else 0
     combos = select_flagged_picks(db, combo_cands, s, now, "combo_pick", "combo_max_per_day", "combo_popular_only") \
         if publish and combo_cands else 0
     return {"analysed": stats["analysed"], "ok": stats["ok"], "insufficient": stats["insufficient"],
             "competitions": len(by_comp), "published": published, "featured": featured, "value_picks": value,
-            "combo_picks": combos,
+            "combo_picks": combos, "bankers": bankers,
             "computed_at": now.isoformat()}
 
 
@@ -287,8 +292,11 @@ def select_flagged_picks(db: Session, candidates: list, s: dict, now: datetime, 
     """Sélection générique figée avant le match (un par match, plafond quotidien, diversité des marchés)."""
     col = getattr(Prediction, flag)
     popular_only = bool(s.get(popular_key, True))
-    best = {m.id: (score, m, mk) for score, m, mk in candidates if m.kickoff > now + timedelta(minutes=10)
-            and (not popular_only or is_popular(m.competition.code))}
+    best: dict = {}
+    for score, m, mk in candidates:  # le meilleur candidat de chaque match
+        if m.kickoff > now + timedelta(minutes=10) and (not popular_only or is_popular(m.competition.code)) \
+                and (m.id not in best or score > best[m.id][0]):
+            best[m.id] = (score, m, mk)
     if not best:
         return 0
     days = {m.kickoff.date() for _, m, _ in best.values()}

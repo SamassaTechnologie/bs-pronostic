@@ -859,3 +859,20 @@ def test_combo_picks_same_match(populated, client):
     assert "combo_picks" in dash and "combo_performance" in dash
     assert all(c["combo_pick"] and c["reference_odds"] >= 1.6 for c in dash["combo_picks"])
 
+
+
+def test_banker_and_track_record(populated, client):
+    """Le banker du jour : au plus un par jour, très solide, grands championnats ; bilan public sans données inventées."""
+    from collections import Counter
+    with SessionLocal() as db:
+        bk = db.scalars(select(Prediction).where(Prediction.banker.is_(True))).all()
+        assert all(p.probability >= 0.75 and p.confidence >= 75 for p in bk)
+        assert not bk or max(Counter(p.match.kickoff.date() for p in bk).values()) == 1
+    tr = client.get("/api/track-record").json()
+    assert [c["key"] for c in tr["categories"]] == ["banker", "selection", "value", "combo", "all"]
+    allp = next(c for c in tr["categories"] if c["key"] == "all")["periods"]["all"]
+    assert allp["total"] == client.get("/api/performance").json()["overall"]["total"]
+    assert all(c["n"] >= 10 for c in tr["by_competition"])
+    assert set(tr["banker_form"]) <= {"won", "lost"}
+    dash = client.get("/api/dashboard").json()
+    assert "bankers" in dash and "banker_performance" in dash

@@ -73,8 +73,10 @@ def _group_stats(rows: list[Prediction]) -> dict:
 
 def performance(db: Session, date_from: Optional[datetime] = None, date_to: Optional[datetime] = None,
                 competition_id: Optional[int] = None, featured: bool = False, value: bool = False,
-                combo: bool = False) -> dict:
+                combo: bool = False, banker: bool = False) -> dict:
     q = select(Prediction).join(Match, Prediction.match_id == Match.id)
+    if banker:
+        q = q.where(Prediction.banker.is_(True))
     if combo:
         q = q.where(Prediction.combo_pick.is_(True))
     if featured:
@@ -149,6 +151,6 @@ def prediction_row(p: Prediction) -> dict:
         "bookmaker": p.bookmaker, "implied_probability": p.implied_probability, "result": p.result,
         "settled_at": p.settled_at.isoformat() if p.settled_at else None, "explanation": p.explanation,
         "engine_version": p.engine_version, "featured": bool(p.featured), "value_pick": bool(p.value_pick),
-        "combo_pick": bool(p.combo_pick),
+        "combo_pick": bool(p.combo_pick), "banker": bool(p.banker),
         "featured_at": p.featured_at.isoformat() if p.featured_at else None,
     }

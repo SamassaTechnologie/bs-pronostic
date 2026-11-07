@@ -37,6 +37,7 @@ export type PickCard = {
   featured?: boolean;
   value_pick?: boolean;
   combo_pick?: boolean;
+  banker?: boolean;
   reference_odds?: number;
   bookmaker_odds?: boolean;
   model_probability?: number;
@@ -176,6 +177,10 @@ export type HistoryRow = {
   tier: string;
   odds: number | null;
   result: string;
+  featured?: boolean;
+  value_pick?: boolean;
+  combo_pick?: boolean;
+  banker?: boolean;
 };
 
 export type ComboLeg = { match_id: number; market_key: string; label: string; probability: number; confidence: number; odds: number | null; match_label: string; competition: string; kickoff: string; tier: string };

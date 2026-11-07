@@ -31,6 +31,7 @@ ADDED_COLUMNS = [
     ("competitions", "allsports_id", "INTEGER"),
     ("matches", "details", "JSON"),
     ("predictions", "combo_pick", "BOOLEAN NOT NULL DEFAULT FALSE"),
+    ("predictions", "banker", "BOOLEAN NOT NULL DEFAULT FALSE"),
 ]
 
 

@@ -23,6 +23,8 @@ const NUMERIC_SETTINGS: [string, string, number][] = [
   ["combo_min_probability", "Combinés : probabilité minimale", 0.01], ["combo_min_confidence", "Combinés : confiance minimale (/100)", 1],
   ["combo_min_odds", "Combinés : cote juste minimale", 0.05], ["combo_max_odds", "Combinés : cote juste maximale", 0.05],
   ["combo_max_per_day", "Combinés : maximum par jour", 1],
+  ["banker_min_probability", "Banker : probabilité minimale", 0.01], ["banker_min_confidence", "Banker : confiance minimale (/100)", 1],
+  ["banker_per_day", "Banker : nombre par jour", 1],
 ];
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
