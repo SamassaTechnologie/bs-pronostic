@@ -169,7 +169,7 @@ export default async function Home() {
         {[
           ...(live.length ? [["#direct", `Direct ${live.length}`]] : []),
           ["#grands", "★ Grands championnats"], ["#pronostics", "Pronostics SAM"], ["#combines", "Combinés"],
-          ["#jour", "Matchs du jour"], ["#bilan", "Bilan"],
+          ["#jour", "Matchs du jour"], ["#bilan", "Bilan"], ["/statistiques", "Statistiques"],
         ].map(([h, l]) => (
           <a key={h} href={h} className="shrink-0 rounded-full border border-line bg-white px-3 py-1.5 text-[12.5px] font-bold text-night">{l}</a>
         ))}

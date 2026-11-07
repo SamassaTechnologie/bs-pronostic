@@ -357,3 +357,120 @@ def assistant(req: AssistantRequest, db: Session = Depends(get_db),
     return ask_assistant(db, req.question.strip(), [h.model_dump() for h in req.history],
                          (x_member_id or "")[:36] or None, req.match_id,
                          email=((x_member_email or "")[:200] or None) if expected else None)
+
+
+# --- Statistiques par marché (classement des équipes + matchs à venir filtrés) --------------------------------------
+def _gf(d, tid):
+    return d.hg if d.home_id == tid else d.ag
+
+
+def _ga(d, tid):
+    return d.ag if d.home_id == tid else d.hg
+
+
+STAT_MARKETS: dict[str, dict] = {
+    "btts": {"label": "Les deux équipes marquent", "model": "BTTS_Y", "fn": lambda d, t: d.hg > 0 and d.ag > 0},
+    "plus-1-5": {"label": "Plus de 1,5 but", "model": "O1.5", "fn": lambda d, t: d.hg + d.ag > 1.5},
+    "plus-2-5": {"label": "Plus de 2,5 buts", "model": "O2.5", "fn": lambda d, t: d.hg + d.ag > 2.5},
+    "plus-3-5": {"label": "Plus de 3,5 buts", "model": "O3.5", "fn": lambda d, t: d.hg + d.ag > 3.5},
+    "moins-2-5": {"label": "Moins de 2,5 buts", "model": "U2.5", "fn": lambda d, t: d.hg + d.ag < 2.5},
+    "mi-temps-but": {"label": "But en 1re mi-temps", "model": "HT_O0.5",
+                     "fn": lambda d, t: None if d.hthg is None or d.htag is None else d.hthg + d.htag > 0},
+    "clean-sheet": {"label": "Ne prend pas de but", "model": None, "fn": lambda d, t: _ga(d, t) == 0},
+    "ne-marque-pas": {"label": "Ne marque pas", "model": None, "fn": lambda d, t: _gf(d, t) == 0},
+    "corners": {"label": "Plus de 9,5 corners", "model": "C_O9.5",
+                "fn": lambda d, t: None if d.total_corners is None else d.total_corners > 9.5},
+    "cartons": {"label": "Plus de 3,5 cartons", "model": "K_O3.5",
+                "fn": lambda d, t: None if d.total_cards is None else d.total_cards > 3.5},
+}
+STAT_MIN_PLAYED = 5
+
+
+@router.get("/stats")
+def stats_markets():
+    return {"items": [{"key": k, "label": v["label"], "has_model": v["model"] is not None} for k, v in STAT_MARKETS.items()]}
+
+
+@router.get("/stats/{market}")
+def stats_market(market: str, competition: Optional[str] = None, min_probability: float = Query(0.6, ge=0.3, le=0.95),
+                 days: int = Query(3, ge=1, le=7), db: Session = Depends(get_db)):
+    """Fréquences réelles de la saison en cours (aucune estimation) et matchs à venir dont la probabilité du modèle
+    atteint le seuil demandé ; « Données insuffisantes » sous 5 matchs joués."""
+    from ..popular import is_popular, rank
+    spec = STAT_MARKETS.get(market)
+    if spec is None:
+        raise HTTPException(404, "Marché inconnu")
+    now = _now()
+    q = select(Competition).where(Competition.enabled.is_(True))
+    comps = db.scalars(q.where(Competition.code == competition) if competition else q).all()
+    if competition and not comps:
+        raise HTTPException(404, "Championnat introuvable")
+    if not competition:
+        comps = [c for c in comps if is_popular(c.code)]
+    fn = spec["fn"]
+    per_team: dict[int, dict] = {}
+    league = {"n": 0, "yes": 0}
+    for c in sorted(comps, key=lambda c: rank(c.code)):
+        season = _current_season(db, c.id)
+        if not season:
+            continue
+        ms = db.scalars(select(Match).where(Match.competition_id == c.id, Match.status == "FINISHED",
+                                            Match.season == season).order_by(Match.kickoff)).unique().all()
+        for m in ms:
+            d = match_to_data(m)
+            if not d.finished:
+                continue
+            for tid, side, team in ((d.home_id, "home", m.home_team), (d.away_id, "away", m.away_team)):
+                v = fn(d, tid)
+                if v is None:
+                    continue
+                row = per_team.setdefault(tid, {"team_id": tid, "team": team.name, "competition": comp_row(c),
+                                                "n": 0, "yes": 0, "home_n": 0, "home_yes": 0, "away_n": 0,
+                                                "away_yes": 0, "last": []})
+                row["n"] += 1
+                row["yes"] += bool(v)
+                row[f"{side}_n"] += 1
+                row[f"{side}_yes"] += bool(v)
+                row["last"] = (row["last"] + [bool(v)])[-5:]
+            v = fn(d, d.home_id)
+            if v is not None and market not in ("clean-sheet", "ne-marque-pas"):
+                league["n"] += 1
+                league["yes"] += bool(v)
+
+    def rate(y, n):
+        return round(y / n, 3) if n else None
+
+    teams = []
+    for r in per_team.values():
+        if r["n"] < STAT_MIN_PLAYED:
+            continue
+        teams.append({**{k: r[k] for k in ("team_id", "team", "competition", "n", "yes", "last")},
+                      "rate": rate(r["yes"], r["n"]), "home_rate": rate(r["home_yes"], r["home_n"]),
+                      "away_rate": rate(r["away_yes"], r["away_n"]), "home_n": r["home_n"], "away_n": r["away_n"]})
+    teams.sort(key=lambda t: (-t["rate"], -t["n"]))
+
+    upcoming = []
+    if spec["model"]:
+        comp_ids = [c.id for c in comps]
+        for a in db.scalars(select(Analysis).join(Match, Analysis.match_id == Match.id).where(
+                Match.competition_id.in_(comp_ids), Match.status == "SCHEDULED", Match.kickoff >= now,
+                Match.kickoff < now + timedelta(days=days))).unique():
+            p = a.payload or {}
+            if p.get("status") != "ok":
+                continue
+            mk = next((x for x in p.get("markets", []) if x["key"] == spec["model"] and x.get("available")), None)
+            if mk is None or mk["probability"] < min_probability:
+                continue
+            h, aw = per_team.get(a.match.home_team_id), per_team.get(a.match.away_team_id)
+            upcoming.append({
+                "match": match_summary(a.match), "probability": mk["probability"],
+                "confidence": mk["confidence"]["score"], "fair_odds": mk.get("fair_odds"), "odds": mk.get("odds"),
+                "is_pick": mk["key"] in (p.get("picks") or []), "avoid": bool(p.get("avoid_reasons")),
+                "home_rate": rate(h["home_yes"], h["home_n"]) if h and h["home_n"] >= 3 else None,
+                "away_rate": rate(aw["away_yes"], aw["away_n"]) if aw and aw["away_n"] >= 3 else None,
+            })
+        upcoming.sort(key=lambda u: (-u["probability"], u["match"]["kickoff"]))
+    return {"market": {"key": market, "label": spec["label"], "model": spec["model"]},
+            "scope": comp_row(comps[0]) if competition else None,
+            "league_rate": rate(league["yes"], league["n"]), "league_n": league["n"],
+            "teams": teams[:40], "teams_total": len(teams), "upcoming": upcoming[:40]}

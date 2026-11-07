@@ -876,3 +876,18 @@ def test_banker_and_track_record(populated, client):
     assert set(tr["banker_form"]) <= {"won", "lost"}
     dash = client.get("/api/dashboard").json()
     assert "bankers" in dash and "banker_performance" in dash
+
+
+def test_market_stats_pages(client):
+    """Statistiques par marché : fréquences réelles, au moins 5 matchs joués, matchs à venir au-dessus du seuil."""
+    assert len(client.get("/api/stats").json()["items"]) >= 8
+    assert client.get("/api/stats/inconnu").status_code == 404
+    comps = client.get("/api/competitions").json()["items"]
+    code = comps[0]["code"]
+    for mk in ("btts", "plus-2-5", "clean-sheet", "corners"):
+        r = client.get(f"/api/stats/{mk}", params={"competition": code, "min_probability": 0.5, "days": 7}).json()
+        assert all(t["n"] >= 5 and 0 <= t["rate"] <= 1 and len(t["last"]) <= 5 for t in r["teams"])
+        assert [t["rate"] for t in r["teams"]] == sorted((t["rate"] for t in r["teams"]), reverse=True)
+        assert all(u["probability"] >= 0.5 for u in r["upcoming"])
+    r = client.get("/api/stats/btts", params={"competition": code}).json()
+    assert r["teams"] and r["league_n"] > 0
