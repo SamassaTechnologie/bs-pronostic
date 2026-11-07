@@ -13,7 +13,9 @@ import threading
 import time
 from typing import Optional
 
+import re
 import httpx
+from datetime import datetime, timedelta, timezone
 
 from ..config import get_settings
 
@@ -219,9 +221,42 @@ def _groq_web(prompt: str) -> dict:
     return {"text": text[:2500], "sources": sources[:6], "queries": queries[:4]}
 
 
+_YEAR = re.compile(r"(?<!\d)(20\d{2})(?!\d)")
+
+
+def _fresh_only(res: dict) -> dict:
+    """Écarte les sources visiblement anciennes (une année passée dans l'adresse ou le titre, sans l'année en
+    cours) ; sans source restante, aucun texte n'est conservé."""
+    year = datetime.now(timezone.utc).year
+    keep = []
+    for x in res.get("sources") or []:
+        years = {int(y) for y in _YEAR.findall(f"{x.get('uri', '')} {x.get('title', '')}")}
+        if years and year not in years and max(years) < year:
+            continue
+        keep.append(x)
+    res["sources"] = keep
+    if not keep:
+        res["text"] = ""
+    return res
+
+
+def _dated(prompt: str) -> str:
+    today = datetime.now(timezone.utc)
+    return (f"Nous sommes le {today.strftime('%d/%m/%Y')}. N'utilise QUE des articles publiés depuis moins de "
+            f"14 jours (après le {(today - timedelta(days=14)).strftime('%d/%m/%Y')}) ; ignore tout article plus ancien "
+            "ou non daté (effectifs et entraîneurs changent). Si rien de récent n'est trouvé, réponds seulement : "
+            "« Aucune information récente fiable. »\n\n" + prompt)
+
+
 def web_brief(prompt: str) -> dict:
-    """Recherche web : Google via Gemini si l'offre de la clé l'autorise, sinon Groq Compound.
-    Renvoie {"text", "sources", "queries"} ; le texte n'est retenu que s'il est appuyé sur au moins une source."""
+    """Recherche web : Google via Gemini si l'offre de la clé l'autorise, sinon Groq.
+    Renvoie {"text", "sources", "queries"} ; le texte n'est retenu que s'il est appuyé sur au moins une source
+    récente."""
+    prompt = _dated(prompt)
+    return _fresh_only(_web_brief_any(prompt))
+
+
+def _web_brief_any(prompt: str) -> dict:
     s = get_settings()
     if time.monotonic() >= _WEB_STATE["gemini_blocked_until"]:
         try:

@@ -39,13 +39,9 @@ def _usage(db: Session, key: str) -> int:
 
 def _count_call(db: Session, kind: str = "analyse") -> None:
     """Un appel au fournisseur d'IA : compteur global « ia » et compteur par fonction (analyse / assistant)."""
-    day = date.today().isoformat()
+    from .usage import bump_usage
     for k in (USAGE_KEY, f"{USAGE_KEY}-{kind}"):
-        row = db.get(ApiUsage, (k, day))
-        if row is None:
-            db.add(ApiUsage(provider=k, day=day, requests=1))
-        else:
-            row.requests += 1
+        bump_usage(db, k, 1, commit=False)
     db.commit()
 
 
@@ -259,13 +255,8 @@ def _member_usage(db: Session, member: str) -> int:
 
 
 def _count_member(db: Session, member: str) -> None:
-    key = (f"as:{member}"[:40], date.today().isoformat())
-    row = db.get(ApiUsage, key)
-    if row is None:
-        db.add(ApiUsage(provider=key[0], day=key[1], requests=1))
-    else:
-        row.requests += 1
-    db.commit()
+    from .usage import bump_usage
+    bump_usage(db, f"as:{member}"[:40], 1)
 
 
 def ask_assistant(db: Session, question: str, history: list[dict], member: Optional[str],

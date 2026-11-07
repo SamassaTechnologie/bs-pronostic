@@ -41,13 +41,8 @@ def _used(db: Session) -> int:
 
 
 def _count(db: Session, n: int = 1) -> None:
-    key = (NAME, date.today().isoformat())
-    row = db.get(ApiUsage, key)
-    if row is None:
-        db.add(ApiUsage(provider=NAME, day=key[1], requests=n))
-    else:
-        row.requests += n
-    db.commit()
+    from .usage import bump_usage
+    bump_usage(db, NAME, n)
 
 
 def _get(db: Session, path: str) -> dict:

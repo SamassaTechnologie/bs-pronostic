@@ -244,15 +244,8 @@ def _api_usage_today(db: Session, provider: str) -> int:
 
 
 def _add_api_usage(db: Session, provider: str, n: int) -> None:
-    if n <= 0:
-        return
-    key = (provider, date.today().isoformat())
-    row = db.get(ApiUsage, key)
-    if row is None:
-        db.add(ApiUsage(provider=provider, day=key[1], requests=n))
-    else:
-        row.requests += n
-    db.commit()
+    from .usage import bump_usage
+    bump_usage(db, provider, n)
 
 
 # ---------------------------------------------------------------------------

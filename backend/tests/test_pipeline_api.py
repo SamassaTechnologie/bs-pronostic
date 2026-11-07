@@ -809,3 +809,26 @@ def test_assistant_answers_any_market(populated, monkeypatch):
         assert "note" in box.chercher_match("Equipe Introuvable FC")
         miss = box.marches_match(999999)
         assert miss["donnees_insuffisantes"] is True and "actualites_web" in miss["note"]
+
+
+def test_usage_counter_atomic():
+    """Compteurs d'utilisation : incréments répétés sans doublon de ligne (upsert atomique)."""
+    from app.models import ApiUsage
+    from app.services.usage import bump_usage
+    with SessionLocal() as db:
+        for _ in range(3):
+            bump_usage(db, "test-compteur", 2, day="2026-01-01")
+        assert db.get(ApiUsage, ("test-compteur", "2026-01-01")).requests == 6
+
+
+def test_web_sources_freshness():
+    """Recherche web : une source datée d'une année passée est écartée ; sans source récente, aucun texte."""
+    from datetime import datetime, timezone
+    from app.ai.providers import _fresh_only
+    y = datetime.now(timezone.utc).year
+    old = {"text": "x", "sources": [{"title": f"Guide {y - 2}", "uri": f"https://e.com/{y - 2}/a"}]}
+    assert _fresh_only(old) == {"text": "", "sources": []}
+    mix = _fresh_only({"text": "x", "sources": [{"title": "Sans date", "uri": "https://e.com/a"},
+                                                 {"title": "Avant-match", "uri": f"https://e.com/{y}/11/b"},
+                                                 {"title": f"Bilan {y - 1}", "uri": "https://e.com/c"}]})
+    assert [s["title"] for s in mix["sources"]] == ["Sans date", "Avant-match"] and mix["text"] == "x"
