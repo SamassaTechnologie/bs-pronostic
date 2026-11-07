@@ -945,3 +945,46 @@ def test_push_alerts(populated, client, monkeypatch):
         db.delete(s)
         pred.result, pred.featured = old
         db.commit()
+
+
+def test_lineups_substitutions_and_pressure(populated, monkeypatch):
+    """Compositions officielles (11 titulaires minimum, sinon rien), remplacements, relevés de pression du direct
+    conservés d'un appel à l'autre, et récupération avant le match pour les grands championnats."""
+    from app.config import get_settings
+    from app.providers.allsports import AllSports, details_of, lineups_of, merge_details
+    from app.services import allsports_sync
+    xi = [{"player": f"Joueur {i}", "player_number": i, "player_position": i} for i in range(1, 12)]
+    x = {"event_home_formation": "4-3-3", "event_away_formation": "4-4-2",
+         "lineups": {"home_team": {"starting_lineups": xi, "substitutes": xi[:3], "coaches": [{"coache": "Coach A"}]},
+                     "away_team": {"starting_lineups": xi, "substitutes": [], "coaches": []}},
+         "substitutes": [{"time": "60", "home_scorer": {"in": "Entrant", "out": "Sortant"}, "away_scorer": []}],
+         "statistics": [{"type": "Dangerous Attacks", "home": "20", "away": "10"}]}
+    d = details_of(x)
+    assert d["lineups"]["home"]["formation"] == "4-3-3" and len(d["lineups"]["away"]["starting"]) == 11
+    assert d["lineups"]["home"]["coach"] == "Coach A"
+    assert any(e["type"] == "sub" and e["out"] == "Sortant" for e in d["events"])
+    assert lineups_of({"lineups": {"home_team": {"starting_lineups": xi[:5]}, "away_team": {"starting_lineups": xi}}}) is None
+    m1 = merge_details(None, d, "30")
+    later = details_of({**x, "lineups": None, "statistics": [{"type": "Dangerous Attacks", "home": "35", "away": "22"}]})
+    m2 = merge_details(m1, later, "45+2")
+    assert m2["lineups"] and [p["t"] for p in m2["pressure"]] == [30, 45]
+    assert merge_details(m2, later, "40")["pressure"] == m2["pressure"]  # jamais de retour en arrière
+
+    with SessionLocal() as db:
+        m = db.scalars(select(Match)).first()
+        comp = m.competition
+        old_code, old_details, old_status = comp.code, m.details, m.status
+        comp.code, m.status, m.details = "ENG1", "SCHEDULED", None
+        db.commit()
+        now = m.kickoff - timedelta(minutes=45)
+        row = {**x, "event_home_team": m.home_team.name, "event_away_team": m.away_team.name,
+               "event_date": m.kickoff.strftime("%Y-%m-%d"), "event_time": m.kickoff.strftime("%H:%M")}
+        monkeypatch.setattr(AllSports, "fixtures", lambda self, a, b, league_id=None: [row])
+        monkeypatch.setattr(get_settings(), "allsports_key", "test")
+        allsports_sync._pre["at"] = None
+        assert allsports_sync.prematch_lineups(db, now) == 1
+        db.refresh(m)
+        assert m.details["lineups"]["home"]["starting"][0]["name"] == "Joueur 1"
+        assert allsports_sync.prematch_lineups(db, now) == 0  # déjà connue
+        comp.code, m.details, m.status = old_code, old_details, old_status
+        db.commit()

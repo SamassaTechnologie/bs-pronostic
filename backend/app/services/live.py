@@ -65,6 +65,11 @@ def refresh_scores(db: Session, now: Optional[datetime] = None, days_back: int =
     fo_ok = res.get("ok") and res.get("error") is None
     skip = set(res.pop("comp_ids", [])) if fo_ok else set()
     extra = live_scores(db, now, skip)
+    try:  # compositions officielles des grands matchs de l'heure à venir
+        from .allsports_sync import prematch_lineups
+        prematch_lineups(db, now)
+    except Exception:  # jamais bloquant pour le direct
+        db.rollback()
     if not extra["ok"]:
         # AllSportsAPI indisponible : SportAPI.ai prend le relais pour le direct
         from .allsports_sync import live_candidates
@@ -224,7 +229,9 @@ def match_live_state(db: Session, m: Match) -> dict:
                 "note": "Score en direct non disponible pour ce championnat (source gratuite)" if not error else error}
     if m.status in ("POSTPONED", "CANCELLED"):
         return {"state": "postponed", "label": "Reporté" if m.status == "POSTPONED" else "Annulé", "covered": False}
-    return {"state": "scheduled", "label": "À venir", "covered": False}
+    lu = (m.details or {}).get("lineups")
+    return {"state": "scheduled", "label": "À venir", "covered": False,
+            "details": {"events": [], "stats": [], "lineups": lu, "source": "AllSportsAPI"} if lu else None}
 
 
 def live_board(db: Session, force: bool = False, tz_name: Optional[str] = None) -> dict:

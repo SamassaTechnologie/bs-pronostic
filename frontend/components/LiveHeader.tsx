@@ -18,22 +18,57 @@ export type LiveState = {
   details?: MatchDetails | null;
 };
 
-type MatchEvent = { minute: string; type: "goal" | "penalty" | "own_goal" | "yellow" | "red" | "second_yellow"; side: "home" | "away"; player: string; assist?: string; score?: string };
+type MatchEvent = { minute: string; type: "goal" | "penalty" | "own_goal" | "yellow" | "red" | "second_yellow" | "sub"; side: "home" | "away"; player: string; assist?: string; score?: string; out?: string };
 type MatchStat = { label: string; home: number; away: number; pct: boolean };
-export type MatchDetails = { events: MatchEvent[]; stats: MatchStat[]; source?: string };
+type Player = { name: string; number: number | null; pos: number | null };
+export type TeamLineup = { formation: string | null; starting: Player[]; bench: Player[]; coach: string | null; missing: string[] };
+export type MatchDetails = { events: MatchEvent[]; stats: MatchStat[]; source?: string; lineups?: { home: TeamLineup; away: TeamLineup } | null; pressure?: { t: number; h: number; a: number }[] };
 
 const EV_LABEL: Record<MatchEvent["type"], string> = {
   goal: "But", penalty: "But sur penalty", own_goal: "But contre son camp", yellow: "Carton jaune",
-  red: "Carton rouge", second_yellow: "Second carton jaune",
+  red: "Carton rouge", second_yellow: "Second carton jaune", sub: "Remplacement",
 };
 
 function EvIcon({ t }: { t: MatchEvent["type"] }) {
   if (t === "yellow") return <span className="inline-block h-3.5 w-2.5 rounded-[2px] bg-[#f5c518]" aria-hidden />;
   if (t === "red" || t === "second_yellow") return <span className="inline-block h-3.5 w-2.5 rounded-[2px] bg-brick" aria-hidden />;
+  if (t === "sub") return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4 text-white/70" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden><path d="M7 4v16M7 20l-3-3M7 20l3-3M17 20V4M17 4l-3 3M17 4l3 3" /></svg>
+  );
   return (
     <svg viewBox="0 0 24 24" className={`h-4 w-4 ${t === "own_goal" ? "text-brick" : "text-white"}`} fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
       <circle cx="12" cy="12" r="9" /><path d="M12 7.5l3.8 2.8-1.5 4.4H9.7l-1.5-4.4z" />
     </svg>
+  );
+}
+
+/** Domination : attaques dangereuses de chaque équipe entre deux relevés du direct (données de la source, jamais
+ * interpolées). Barres vers le haut : équipe à domicile ; vers le bas : équipe à l'extérieur. */
+function Pressure({ p }: { p: { t: number; h: number; a: number }[] }) {
+  const parts = p.slice(1).map((x, i) => ({ from: p[i].t, to: x.t, h: Math.max(0, x.h - p[i].h), a: Math.max(0, x.a - p[i].a) }));
+  const end = Math.max(90, p[p.length - 1].t);
+  const max = Math.max(1, ...parts.map((x) => Math.max(x.h, x.a)));
+  const W = 300, H = 64, mid = H / 2;
+  const sx = (t: number) => (t / end) * W;
+  return (
+    <figure className="mt-4" aria-label="Domination : attaques dangereuses par période">
+      <figcaption className="mb-1 flex justify-between text-[11px] text-white/65"><span>Domination (attaques dangereuses)</span><span>{p[0].t}′ → {p[p.length - 1].t}′</span></figcaption>
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-16 w-full" preserveAspectRatio="none" role="img">
+        <line x1="0" x2={W} y1={mid} y2={mid} stroke="rgba(255,255,255,.25)" strokeWidth="1" />
+        <line x1={sx(45)} x2={sx(45)} y1="0" y2={H} stroke="rgba(255,255,255,.15)" strokeDasharray="2 3" />
+        {parts.map((x, i) => {
+          const x0 = sx(x.from) + 0.5, w = Math.max(1, sx(x.to) - sx(x.from) - 1);
+          const hh = (x.h / max) * (mid - 2), ha = (x.a / max) * (mid - 2);
+          return (
+            <g key={i}>
+              <rect x={x0} y={mid - hh} width={w} height={hh} fill="#12a150" rx="1"><title>{`${x.from}′–${x.to}′ : ${x.h} à domicile`}</title></rect>
+              <rect x={x0} y={mid} width={w} height={ha} fill="#e8a317" rx="1"><title>{`${x.from}′–${x.to}′ : ${x.a} à l'extérieur`}</title></rect>
+            </g>
+          );
+        })}
+      </svg>
+      <div className="mt-0.5 flex justify-between text-[10.5px] text-white/50"><span>▲ domicile</span><span>mi-temps</span><span>▼ extérieur</span></div>
+    </figure>
   );
 }
 
@@ -54,12 +89,14 @@ function MatchTimeline({ d: raw, home, away }: { d: MatchDetails; home?: number 
               <EvIcon t={e.type} />
               <span className="min-w-0 truncate">
                 <span className="font-semibold">{e.player}</span>
+                {e.type === "sub" && e.out && <span className="text-white/55"> pour {e.out}</span>}
                 <span className="text-white/55"> · {EV_LABEL[e.type]}{e.score && (e.type === "goal" || e.type === "penalty" || e.type === "own_goal") ? ` (${e.score.replace("-", "–")})` : ""}</span>
               </span>
             </li>
           ))}
         </ol>
       )}
+      {d.pressure && d.pressure.length >= 2 && <Pressure p={d.pressure} />}
       {d.stats.length > 0 && (
         <div className={`space-y-2 ${d.events.length ? "mt-4" : ""}`} aria-label="Statistiques du match">
           {d.stats.map((s) => {

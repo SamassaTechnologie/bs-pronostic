@@ -6,6 +6,7 @@ import type { Analysis, FormBlock, Market, Meta, MatchSummary } from "@/lib/type
 import { Factors } from "@/components/PickCard";
 import { AiAnalysis } from "@/components/AiAnalysis";
 import { LiveHeader, type LiveState } from "@/components/LiveHeader";
+import { Lineups } from "@/components/Lineups";
 import { flag } from "@/lib/flags";
 import { Card, ConfidenceBadge, Empty, ErrorBox, OddsInfo, ProbBar, Section, TierBadge } from "@/components/ui";
 
@@ -375,6 +376,12 @@ export default async function MatchPage({ params, searchParams }: { params: Prom
                   </Card>
                 ))}
               </div>
+            </Section>
+          )}
+
+          {initialLive.details?.lineups && (
+            <Section title="Compositions officielles">
+              <Lineups l={initialLive.details.lineups} home={m.home.name} away={m.away.name} />
             </Section>
           )}
 

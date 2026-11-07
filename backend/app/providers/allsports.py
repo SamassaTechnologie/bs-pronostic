@@ -212,10 +212,69 @@ def details_of(x: dict) -> Optional[dict]:
         kind = "second_yellow" if "yellow red" in card or "second" in card else "red" if "red" in card else "yellow"
         events.append({"minute": str(c.get("time") or "").strip(), "type": kind, "side": side,
                        "player": (c.get(f"{side}_fault") or "").strip()})
+    for s in x.get("substitutes") or []:
+        for side in ("home", "away"):
+            v = s.get(f"{side}_scorer")
+            if isinstance(v, dict) and (v.get("in") or v.get("out")):
+                events.append({"minute": str(s.get("time") or "").strip(), "type": "sub", "side": side,
+                               "player": (v.get("in") or "").strip(), "out": (v.get("out") or "").strip()})
     events.sort(key=lambda e: _minute_key(e["minute"]))
     raw = stats_of(x)
     stats = [{"label": label, "home": raw[t][0], "away": raw[t][1], "pct": pct}
              for t, label, pct in STAT_LABELS if t in raw]
-    if not events and not stats:
+    lineups = lineups_of(x)
+    if not events and not stats and not lineups:
         return None
-    return {"events": events[:40], "stats": stats, "source": "AllSportsAPI"}
+    out = {"events": events[:60], "stats": stats, "source": "AllSportsAPI"}
+    if lineups:
+        out["lineups"] = lineups
+    return out
+
+
+def _players(rows) -> list[dict]:
+    out = []
+    for r in rows or []:
+        name = (r.get("player") or "").strip() if isinstance(r, dict) else ""
+        if name:
+            out.append({"name": name, "number": _int(r.get("player_number")), "pos": _int(r.get("player_position"))})
+    return out
+
+
+def lineups_of(x: dict) -> Optional[dict]:
+    """Compositions officielles publiées par AllSportsAPI (environ une heure avant le match) ; None sinon."""
+    lu = x.get("lineups")
+    if not isinstance(lu, dict):
+        return None
+    out = {}
+    for side, key in (("home", "home_team"), ("away", "away_team")):
+        t = lu.get(key) or {}
+        xi = _players(t.get("starting_lineups"))
+        if len(xi) < 11:
+            return None
+        coach = next((c.get("coache") for c in t.get("coaches") or [] if isinstance(c, dict) and c.get("coache")), None)
+        out[side] = {"formation": (x.get(f"event_{side}_formation") or "").strip() or None, "starting": xi,
+                     "bench": _players(t.get("substitutes")), "coach": coach,
+                     "missing": [m.get("player") for m in t.get("missing_players") or [] if isinstance(m, dict) and m.get("player")]}
+    return out
+
+
+def merge_details(old: Optional[dict], new: Optional[dict], minute: Optional[str] = None) -> Optional[dict]:
+    """Nouvelle chronologie + ce qu'elle ne contient plus (compositions, relevés de pression du direct)."""
+    old = old or {}
+    if new is None:
+        return old or None
+    out = dict(new)
+    if "lineups" not in out and old.get("lineups"):
+        out["lineups"] = old["lineups"]
+    pressure = list(old.get("pressure") or [])
+    da = next((s for s in out.get("stats") or [] if s["label"] == "Attaques dangereuses"), None)
+    m = _minute_key(minute or "")[0] if minute else None
+    if da and m is not None and m < 999 and da["home"] is not None and da["away"] is not None:
+        if not pressure or m > pressure[-1]["t"]:
+            pressure.append({"t": m, "h": da["home"], "a": da["away"]})
+    if pressure:
+        out["pressure"] = pressure[-40:]
+    for k in ("final",):
+        if old.get(k) and k not in out:
+            out[k] = old[k]
+    return out

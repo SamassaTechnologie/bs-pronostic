@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from ..config import get_settings
 from ..models import Competition, Match, Setting, SyncRun, utcnow
-from ..providers.allsports import AllSports, details_of, minute_of, status_of, kickoff_of, _pair
+from ..providers.allsports import AllSports, details_of, merge_details, minute_of, status_of, kickoff_of, _pair
 from ..providers.base import ProviderError
 from ..providers.names import similarity
 
@@ -137,7 +137,7 @@ def _upcoming(db: Session, p: AllSports, comps: list[Competition], now: datetime
                     by_ref[rec.source_ref] = m
                     d = details_of(x) if rec.status in ("FINISHED", "LIVE") else None
                     if d:
-                        m.details = d
+                        m.details = merge_details(m.details, d)
             db.commit()
             todo = [m for m in by_ref.values() if m.status == "SCHEDULED" and m.kickoff >= now]
             if not todo:
@@ -187,7 +187,7 @@ def _final_details(db: Session, p: AllSports, now: datetime) -> Optional[dict]:
             d = details_of(x)
             if d:
                 d["final"] = True
-                m.details = d
+                m.details = merge_details(m.details, d)
                 done += 1
         db.commit()
         return done, f"{done} match(s) : chronologie et statistiques définitives ({len(todo)} en attente)"
@@ -287,7 +287,7 @@ def live_scores(db: Session, now: datetime, skip_comp_ids: set[int]) -> dict:
             if any_m is not None:
                 d = details_of(x)
                 if d:
-                    any_m.details = d
+                    any_m.details = merge_details(any_m.details, d, minute_of(x))
             m = _find(cands, x)
             if m is None:
                 continue
@@ -315,3 +315,49 @@ def live_scores(db: Session, now: datetime, skip_comp_ids: set[int]) -> dict:
         db.commit()
         _cache["live"] = live
         return {"ok": True, "live": live, "updated": updated, "error": None}
+
+
+_pre: dict = {"at": None}
+
+
+def prematch_lineups(db: Session, now: datetime, every_seconds: int = 1200) -> int:
+    """Compositions officielles des matchs des grands championnats qui commencent dans l'heure : un seul appel
+    « Fixtures » du jour, au plus toutes les 20 minutes, et seulement si une composition manque encore."""
+    from ..popular import is_popular
+    from .settings_service import get_provider_flags
+    from .sync import _add_api_usage
+    cfg = get_settings()
+    if not cfg.allsports_key or not get_provider_flags(db).get("allsports", True):
+        return 0
+    soon = db.scalars(select(Match).join(Competition, Match.competition_id == Competition.id).where(
+        Competition.enabled.is_(True), Match.status == "SCHEDULED", Match.kickoff > now,
+        Match.kickoff <= now + timedelta(minutes=70))).unique().all()
+    todo = [m for m in soon if is_popular(m.competition.code) and not (m.details or {}).get("lineups")]
+    if not todo:
+        return 0
+    with _lock:
+        if _pre["at"] is not None and time.monotonic() - _pre["at"] < every_seconds:
+            return 0
+        _pre["at"] = time.monotonic()
+    p = make_provider(db)
+    try:
+        rows = p.fixtures(now.date().isoformat(), (now + timedelta(minutes=70)).date().isoformat())
+    except ProviderError:
+        return 0
+    finally:
+        _add_api_usage(db, p.name, p.requests_made)
+    n = 0
+    for x in rows:
+        m = _find(todo, x)
+        if m is None:
+            continue
+        from ..providers.allsports import lineups_of
+        lu = lineups_of(x)
+        if lu:
+            d = dict(m.details or {})
+            d["lineups"] = lu
+            d.setdefault("source", "AllSportsAPI")
+            m.details = d
+            n += 1
+    db.commit()
+    return n
