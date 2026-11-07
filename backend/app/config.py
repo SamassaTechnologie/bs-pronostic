@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     # Alertes Web Push (clés VAPID ; la clé privée reste côté serveur)
     vapid_public_key: str = ""
     vapid_private_key: str = ""
-    vapid_subject: str = "mailto:contact@sam-prediction.app"
+    vapid_subject: str = "https://sam-prediction.vercel.app"
     push_quiet_start: int = 23  # pas d'alerte la nuit (heure du fuseau par défaut)
     push_quiet_end: int = 7
     assistant_token: str = ""  # secret partagé avec le frontend (en-tête X-Assistant-Token)
