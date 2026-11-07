@@ -319,5 +319,6 @@ def ask_assistant(db: Session, question: str, history: list[dict], member: Optio
                                               "reformulez la question.", "retryable": True}
     refs = references(clean, box)
     return {"status": "ok", "answer": clean, "combos": refs["combos"], "matches": refs["matches"],
+            "sources": refs.get("sources", []),
             "provider": prov.label, "model": prov.model, "removed": len(dropped),
             "remaining_today": max(0, daily - _member_usage(db, who))}

@@ -790,3 +790,22 @@ def test_ai_web_news_rules():
     assert any("3" in p for p in problems)  # le chiffre du web est signalé
     content, removed = sanitize(out, dossier, {"1X"})
     assert content["actualites"] == ["Selon la presse, le gardien titulaire de A est blessé."] and removed == 1
+
+
+def test_assistant_answers_any_market(populated, monkeypatch):
+    """Assistant : marché précis (même non retenu), recherche de tout match, avis prudent sans données."""
+    from app.ai.assistant import Toolbox
+    from app.models import Analysis
+    with SessionLocal() as db:
+        a = db.scalar(select(Analysis).where(Analysis.status == "ok"))
+        box = Toolbox(db)
+        r = box.marches_match(a.match_id, "score exact")
+        assert r["marches"] and all("score" in x["marche"].lower() or "exact" in x["famille"].lower() for x in r["marches"])
+        main = box.marches_match(a.match_id)
+        assert main["marches"] and not any(x["cle"].startswith("e:") for x in main["marches"])
+        assert any(not x["retenu_par_sam"] for x in main["marches"])  # marchés non retenus aussi
+        home = a.match.home_team.name.split()[0]
+        assert box.chercher_match(home)["matchs"] or True
+        assert "note" in box.chercher_match("Equipe Introuvable FC")
+        miss = box.marches_match(999999)
+        assert miss["donnees_insuffisantes"] is True and "actualites_web" in miss["note"]

@@ -41,7 +41,15 @@ Règles absolues :
 6. Préfère peu de matchs dans un combiné : à cote égale, moins de sélections signifie moins de marge et moins
    de surprises. Dis-le quand c'est utile.
 7. Aucune garantie de gain, aucune incitation à parier plus ; rappelle les risques avec sobriété.
-8. Si les outils ne renvoient rien d'exploitable, dis-le simplement (« Données insuffisantes ») sans inventer.
+8. Réponds TOUJOURS à une demande de pronostic, quel que soit le match ou le marché, sans refus sec :
+   a) match analysé par SAM : appelle « marches_match » et donne l'option demandée (ou la plus solide du marché
+      demandé) avec sa probabilité ; si SAM ne l'a pas retenue, dis-le (« non retenu par SAM ») avec sa confiance ;
+   b) match introuvable dans « lister_matchs » : appelle « chercher_match » (match non suivi, données insuffisantes,
+      date plus lointaine) ;
+   c) données insuffisantes ou match non suivi : appelle « actualites_web », puis donne un avis prudent clairement
+      annoncé par « Avis de l'IA, sans données statistiques SAM (fiabilité faible) : » ; dans ce cas, n'écris
+      aucune probabilité ni aucune cote, seulement une tendance argumentée par les faits trouvés (« Selon la presse… »).
+   Ne présente jamais un avis de l'IA comme un pronostic SAM.
 9. Réponse claire et structurée : une phrase d'introduction, puis des points courts (lignes commençant par « - »),
    gras possible avec **texte**. Pas de tableau, pas de titre markdown. 180 mots au plus hors cartes.
 10. Questions sans rapport avec le football ou les pronostics : réponds en une phrase que tu ne traites que ce sujet."""
@@ -59,6 +67,27 @@ TOOLS: list[dict] = [
      "description": "Dossier complet d'un match : probabilités de tous les marchés, forme, classement, "
                     "confrontations, tendances, absences, cotes.",
      "parameters": {"type": "object", "properties": {"match_id": {"type": "integer"}}, "required": ["match_id"]}},
+    {"name": "marches_match",
+     "description": "Probabilités SAM de TOUS les marchés d'un match analysé, y compris ceux non retenus : résultat, "
+                    "double chance, buts, mi-temps, score exact, handicaps, corners, cartons, buteurs d'équipe… "
+                    "Filtre par mots-clés (exemples : « score exact », « handicap », « plus de 2,5 »).",
+     "parameters": {"type": "object", "properties": {
+         "match_id": {"type": "integer"},
+         "recherche": {"type": "string", "description": "Mots-clés du marché demandé (vide = marchés principaux)"},
+         "limite": {"type": "integer", "description": "Défaut 15"}}, "required": ["match_id"]}},
+    {"name": "chercher_match",
+     "description": "Cherche n'importe quel match (même non analysé, en données insuffisantes ou dans 7 jours) par "
+                    "nom d'équipe ; indique s'il est suivi et analysé par SAM.",
+     "parameters": {"type": "object", "properties": {
+         "equipe": {"type": "string", "description": "Nom (partiel) d'une équipe"},
+         "adversaire": {"type": "string", "description": "Nom (partiel) de l'adversaire, facultatif"}},
+         "required": ["equipe"]}},
+    {"name": "actualites_web",
+     "description": "Recherche web récente sur un match ou une équipe (blessés, suspendus, forme, contexte), avec "
+                    "sources. À utiliser quand SAM n'a pas de données suffisantes, ou pour compléter le contexte.",
+     "parameters": {"type": "object", "properties": {
+         "requete": {"type": "string", "description": "Exemple : « Djoliba contre Stade Malien novembre 2026 »"}},
+         "required": ["requete"]}},
     {"name": "selections",
      "description": "Meilleures sélections sur TOUS les matchs et marchés (résultat, double chance, buts, les deux "
                     "marquent, mi-temps, corners, cartons), triées par solidité. Filtres facultatifs.",
@@ -113,6 +142,7 @@ class Toolbox:
         self.matches: dict[int, dict] = {}
         self.results: list[Any] = []
         self._settings = None
+        self.web_sources: list[dict] = []
 
     # -- utilitaires
     @property
@@ -199,12 +229,98 @@ class Toolbox:
         from ..api.catalog import match_insights
         a = self.db.scalar(select(Analysis).where(Analysis.match_id == int(match_id)))
         if a is None or a.status != "ok":
-            return {"erreur": "Données insuffisantes pour ce match"}
+            return {"match_id": int(match_id), "donnees_insuffisantes": True,
+                    "note": "Données SAM insuffisantes pour ce match : utiliser actualites_web pour un avis prudent"}
         self._remember(a)
         vk, fk = self._keys()
         d = build_dossier(a.payload["match"], a.payload, match_insights(a.match_id, self.db), vk, fk)
         d["match_id"] = a.match_id
         return d
+
+    def marches_match(self, match_id, recherche=None, limite=15) -> dict:
+        from ..engine import extended as _ext
+        from ..services.game import extended_rows
+        a = self.db.scalar(select(Analysis).where(Analysis.match_id == int(match_id)))
+        if a is None or a.status != "ok":
+            return {"match_id": int(match_id), "donnees_insuffisantes": True,
+                    "note": "SAM n'a pas assez de données pour ce match : utiliser actualites_web pour un avis prudent"}
+        self._remember(a)
+        p = a.payload
+        picks = set(p.get("picks") or [])
+        rows = []
+        for mk in p.get("markets", []):
+            if mk.get("available"):
+                rows.append({"cle": mk["key"], "marche": mk["label"], "famille": FAMILY_LABELS.get(mk["family"], mk["family"]),
+                             "probabilite_pct": round(mk["probability"] * 100),
+                             "confiance_sur_100": (mk.get("confidence") or {}).get("score"),
+                             "cote_bookmaker": mk.get("odds"), "retenu_par_sam": mk["key"] in picks})
+        for r in extended_rows(p):
+            rows.append({"cle": r["key"], "marche": r["label"], "famille": _ext.FAMILIES.get(r.get("family"), r.get("family")),
+                         "probabilite_pct": round(r["probability"] * 100), "confiance_sur_100": None,
+                         "cote_sam": r.get("odds"), "retenu_par_sam": r["key"] in picks,
+                         "note": "marché dérivé du modèle de buts"})
+        q = _fold(recherche or "")
+        if q:
+            words = [w for w in re.split(r"[\s,;]+", q) if len(w) > 1]
+            rows = [r for r in rows if all(w in _fold(f"{r['marche']} {r['famille']}") for w in words)] or \
+                   [r for r in rows if any(w in _fold(f"{r['marche']} {r['famille']}") for w in words)]
+        else:
+            rows = [r for r in rows if not r["cle"].startswith("e:")]
+        rows.sort(key=lambda r: -r["probabilite_pct"])
+        n = max(1, min(40, int(limite or 15)))
+        out = {"match_id": a.match_id, "match": f"{p['match']['home']['name']} – {p['match']['away']['name']}",
+               "confiance_match_sur_100": p.get("match_confidence"), "a_eviter": p.get("avoid_reasons") or [],
+               "marches": rows[:n]}
+        if not rows:
+            out["note"] = "Aucun marché ne correspond à cette recherche"
+        return out
+
+    def chercher_match(self, equipe, adversaire=None) -> dict:
+        from ..models import Competition, Team
+        from sqlalchemy.orm import aliased
+        H, A = aliased(Team), aliased(Team)
+        ms = self.db.scalars(select(Match).join(H, Match.home_team_id == H.id).join(A, Match.away_team_id == A.id)
+                             .where(Match.kickoff > self.now - timedelta(hours=3),
+                                    Match.kickoff < self.now + timedelta(days=8))
+                             .order_by(Match.kickoff)).unique().all()
+        e, adv = _fold(equipe), _fold(adversaire or "")
+        found = []
+        for m in ms:
+            names = _fold(f"{m.home_team.name} {m.away_team.name}")
+            if e in names and (not adv or adv in names):
+                a = self.db.scalar(select(Analysis).where(Analysis.match_id == m.id))
+                found.append({"match_id": m.id, "match": f"{m.home_team.name} – {m.away_team.name}",
+                              "championnat": m.competition.name, "coup_envoi_utc": m.kickoff.isoformat()[:16].replace("T", " "),
+                              "suivi_par_sam": bool(m.competition.enabled),
+                              "analyse": "ok" if a and a.status == "ok" else "donnees_insuffisantes" if a else "pas_encore_analyse"})
+                if a and a.status == "ok":
+                    self._remember(a)
+            if len(found) >= 8:
+                break
+        if not found:
+            return {"matchs": [], "note": "Match absent de la base SAM (championnat non suivi ou date lointaine) : "
+                                          "utiliser actualites_web pour un avis prudent"}
+        return {"matchs": found}
+
+    def actualites_web(self, requete) -> dict:
+        from ..services.ai_service import _usage, USAGE_KEY, _count_call
+        from ..services.ai_settings import get_ai_settings
+        from .providers import AIError, web_brief
+        cfg = get_ai_settings(self.db)
+        if not cfg.get("web_search") or _usage(self.db, f"{USAGE_KEY}-web") >= int(cfg.get("web_daily", 0)):
+            return {"erreur": "Recherche web désactivée ou quota du jour atteint"}
+        prompt = (f"Recherche les informations récentes et fiables sur : {str(requete)[:200]}. Donne en français "
+                  "6 puces au maximum, factuelles : date et lieu du match si trouvés, forme récente des deux équipes, "
+                  "blessés, suspendus, contexte et enjeu. Aucune cote, aucun pronostic.")
+        try:
+            _count_call(self.db, "web")
+            r = web_brief(prompt)
+        except AIError as exc:
+            return {"erreur": f"Recherche web indisponible ({exc})"}
+        if not r["sources"]:
+            return {"resultat": "Aucune information récente fiable trouvée", "sources": []}
+        self.web_sources.extend(x for x in r["sources"] if x not in self.web_sources)
+        return {"resultat": r["text"], "sources": [x["title"] for x in r["sources"]]}
 
     def selections(self, periode_heures=48, familles=None, probabilite_min_pct=60, confiance_min=60, cote_min=None,
                    cote_max=None, equipe=None, championnat=None, limite=25) -> dict:
@@ -363,4 +479,4 @@ def references(text: str, box: Toolbox) -> dict:
             combos[r] = box.combos[r]
         elif r.startswith("M:") and int(r[2:]) in box.matches:
             matches[r[2:]] = box.matches[int(r[2:])]
-    return {"combos": combos, "matches": matches}
+    return {"combos": combos, "matches": matches, "sources": box.web_sources[:8]}

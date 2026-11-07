@@ -11,6 +11,7 @@ type Msg = {
   text: string;
   combos?: Record<string, Combo>;
   matches?: Record<string, MatchRef>;
+  sources?: { title: string; uri: string }[];
   error?: boolean;
   meta?: string;
 };
@@ -73,6 +74,17 @@ function Answer({ msg, tz }: { msg: Msg; tz: string }) {
     if (line) blocks.push(<p key={`p${k}`}>{inline(line.replace(/\[\[C\d+\]\]/g, ""), msg.matches, tz)}</p>);
   });
   flush(9999);
+  if (msg.sources?.length) {
+    blocks.push(
+      <p key="sources" className="border-t border-line pt-2 text-xs text-steel">
+        Sources web :{" "}
+        {msg.sources.map((s, i) => (
+          <span key={s.uri}>{i > 0 && " · "}<a href={s.uri} target="_blank" rel="noreferrer nofollow" className="text-sky underline">{s.title}</a></span>
+        ))}
+        . Informations de presse non vérifiées par SAM.
+      </p>,
+    );
+  }
   return <div className="space-y-2.5 text-[15px] leading-relaxed text-ink">{blocks}</div>;
 }
 
@@ -119,7 +131,7 @@ export function Assistant({ tz, match }: { tz: string; match?: { id: number; lab
         setMsgs((m) => [...m, { role: "assistant", text: d.message || d.detail || "Service indisponible, réessayez.", error: true }]);
       } else {
         setMsgs((m) => [...m, {
-          role: "assistant", text: d.answer, combos: d.combos, matches: d.matches,
+          role: "assistant", text: d.answer, combos: d.combos, matches: d.matches, sources: d.sources,
           meta: `${d.provider}${typeof d.remaining_today === "number" ? ` · ${d.remaining_today} question(s) restante(s) aujourd'hui` : ""}`,
         }]);
       }
