@@ -991,20 +991,26 @@ def test_lineups_substitutions_and_pressure(populated, monkeypatch):
 
 
 def test_response_cache(client, monkeypatch):
-    """Cache court des réponses publiques : servi depuis la mémoire, effacé dès qu'une analyse ou un règlement
-    modifie les données ; jamais pour le direct."""
+    """Cache des réponses publiques : servi depuis la mémoire ; après une modification des données, l'ancienne
+    version est servie aussitôt (« STALE ») puis recalculée en arrière-plan ; jamais pour le direct."""
+    import time as _time
     from app.config import get_settings
     from app.services import response_cache as rc
     monkeypatch.setattr(get_settings(), "response_cache_seconds", 90)
-    rc.clear()
+    rc.reset()
     r1 = client.get("/api/meta")
     assert r1.headers.get("x-cache") == "MISS"
     r2 = client.get("/api/meta")
     assert r2.headers.get("x-cache") == "HIT" and r2.json() == r1.json()
     with SessionLocal() as db:
         settle_predictions(db)
-    assert client.get("/api/meta").headers.get("x-cache") == "MISS"
+    r3 = client.get("/api/meta")
+    assert r3.headers.get("x-cache") in ("STALE", "HIT") and r3.json() == r1.json()
+    for _ in range(50):  # recalcul en arrière-plan
+        if client.get("/api/meta").headers.get("x-cache") == "HIT":
+            break
+        _time.sleep(0.1)
+    assert client.get("/api/meta").headers.get("x-cache") == "HIT"
     assert "x-cache" not in client.get("/api/live").headers
-    client.put("/api/admin/settings", json={}, headers={"X-Admin-Token": "jeton-admin-test"})
-    assert client.get("/api/meta").headers.get("x-cache") == "MISS"
-    rc.clear()
+    assert client.get("/api/meta", headers={"X-Cache-Refresh": "1"}).headers.get("x-cache") == "MISS"
+    rc.reset()

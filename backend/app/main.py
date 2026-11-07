@@ -103,22 +103,58 @@ async def lifespan(app: FastAPI):
         _scheduler.shutdown(wait=False)
 
 
+async def _refresh(app: FastAPI, key: str) -> None:
+    """Recalcule une réponse en cache sans faire attendre le visiteur."""
+    import httpx
+    from .services import response_cache as rc
+    try:
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://cache") as c:
+            await c.get(key, headers={"X-Cache-Refresh": "1"}, timeout=120)
+    except Exception:
+        logging.getLogger("sam.perf").exception("Recalcul en arrière-plan impossible : %s", key)
+    finally:
+        rc.release_refresh(key)
+
+
+def warm_popular(app: FastAPI) -> None:
+    """Après une modification des données : recalcul anticipé des pages les plus consultées (fil séparé)."""
+    import asyncio
+    import threading
+    from .services import response_cache as rc
+    keys = [k for k in rc.popular_keys() if rc.claim_refresh(k)]
+    if not keys:
+        return
+
+    def run():
+        async def go():
+            for k in keys:
+                await _refresh(app, k)
+        asyncio.run(go())
+    threading.Thread(target=run, daemon=True).start()
+
+
 def create_app() -> FastAPI:
     cfg = get_settings()
     app = FastAPI(title="SAM-Prédiction API", description=cfg.slogan, version="1.0.0", lifespan=lifespan)
     @app.middleware("http")
     async def cache_and_time(request, call_next):
-        """Réponses publiques en cache court + journal des requêtes lentes (diagnostic des lenteurs)."""
+        """Réponses publiques en cache (servies périmées pendant leur recalcul) + journal des requêtes lentes."""
+        import asyncio
         import time as _t
         from starlette.responses import Response
         from .services import response_cache as rc
         start = _t.perf_counter()
         key = None
+        refresh = request.headers.get("x-cache-refresh") == "1"
         if request.method == "GET" and rc.CACHEABLE.match(request.url.path):
             key = str(request.url.path) + "?" + str(request.url.query)
-            hit = rc.get(key)
-            if hit:
-                return Response(content=hit[2], status_code=hit[1], media_type=hit[3], headers={"X-Cache": "HIT"})
+            if not refresh:
+                hit, state = rc.lookup(key)
+                if hit:
+                    if state == "stale" and rc.claim_refresh(key):
+                        asyncio.get_running_loop().create_task(_refresh(app, key))
+                    return Response(content=hit[2], status_code=hit[1], media_type=hit[3],
+                                    headers={"X-Cache": "HIT" if state == "fresh" else "STALE"})
         gen = rc.generation()
         response = await call_next(request)
         if key and response.status_code == 200:
@@ -129,7 +165,7 @@ def create_app() -> FastAPI:
         if request.method != "GET" and request.url.path.startswith(("/api/admin", "/api/cron")):
             rc.clear()  # réglages ou données modifiés par l'administration
         ms = (_t.perf_counter() - start) * 1000
-        if ms > 800:
+        if ms > 800 and not refresh:
             logging.getLogger("sam.perf").warning("Requête lente : %s %s %.0f ms", request.method, request.url.path, ms)
         return response
 
