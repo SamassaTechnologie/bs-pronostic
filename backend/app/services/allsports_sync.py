@@ -370,8 +370,8 @@ def prematch_lineups(db: Session, now: datetime, every_seconds: int = 1200) -> i
 # Cotes des grands championnats européens (marchés absents de football-data.co.uk : double chance, +1,5, les deux
 # marquent…). Identifiants AllSportsAPI, vérifiés à chaque appel par le nom de la compétition renvoyé.
 ODDS_ALLSPORTS = {
-    "ENG1": (152, "premier league"), "ESP1": (302, "laliga|primera division"), "ITA1": (207, "serie a"), "GER1": (175, "bundesliga"),
-    "FRA1": (168, "ligue 1"), "NED1": (244, "eredivisie"), "POR1": (266, "primeira liga|liga portugal"),
+    "ENG1": (152, "premier league"), "ESP1": (302, "laliga|primera"), "ITA1": (207, "serie a"), "GER1": (175, "bundesliga"),
+    "FRA1": (168, "ligue 1"), "NED1": (244, "eredivisie"), "POR1": (266, "primeira liga|liga portugal|portuguese liga"),
     "UCL": (3, "champions league"), "UEL": (4, "europa league"), "UECL": (683, "conference league"),
 }
 ODDS_EVERY_HOURS = 12
