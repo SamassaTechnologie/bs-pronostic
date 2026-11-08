@@ -29,7 +29,7 @@ export default function Conditions() {
         <p>Le service est fourni tel quel, sans garantie de disponibilité permanente. Il peut évoluer, être interrompu pour maintenance ou modifié à tout moment.</p>
       </Block>
       <Block title="8. Contact">
-        <p>Pour toute question : <Contact />.</p>
+        <p>Pour toute question, écrivez-nous à <Contact />.</p>
       </Block>
     </LegalPage>
   );

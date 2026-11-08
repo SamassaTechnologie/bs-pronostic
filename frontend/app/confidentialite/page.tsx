@@ -30,7 +30,7 @@ export default function Confidentialite() {
         <p>Les données du compte sont conservées tant que le compte existe. Un appareil qui n&apos;accepte plus les alertes est retiré automatiquement.</p>
       </Block>
       <Block title="Vos droits">
-        <p>Vous pouvez désactiver les alertes à tout moment dans « Mes alertes », et demander l&apos;accès, la correction ou la suppression de votre compte et de vos données en écrivant à <Contact />.</p>
+        <p>Vous pouvez désactiver les alertes à tout moment dans « Mes alertes », et demander l&apos;accès, la correction ou la suppression de votre compte et de vos données en nous contactant : <Contact />.</p>
       </Block>
     </LegalPage>
   );

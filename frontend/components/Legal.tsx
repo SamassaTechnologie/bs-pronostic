@@ -3,10 +3,18 @@ import type { ReactNode } from "react";
 
 export const UPDATED = "8 novembre 2026";
 
-/** Adresse de contact affichée dans les pages légales (variable d'environnement publique, facultative). */
+/** Coordonnées de contact affichées dans les pages légales. */
+export const CONTACT_EMAIL = process.env.NEXT_PUBLIC_CONTACT_EMAIL || "moncomptejeu10@gmail.com";
+export const CONTACT_PHONE = process.env.NEXT_PUBLIC_CONTACT_PHONE || "+223 71 27 44 86";
+
 export function Contact() {
-  const mail = process.env.NEXT_PUBLIC_CONTACT_EMAIL;
-  return mail ? <a href={`mailto:${mail}`} className="font-semibold text-sky underline">{mail}</a> : <span>l&apos;adresse indiquée dans l&apos;application</span>;
+  return (
+    <>
+      <a href={`mailto:${CONTACT_EMAIL}`} className="font-semibold text-sky underline">{CONTACT_EMAIL}</a>
+      {" "}ou par téléphone au{" "}
+      <a href={`tel:${CONTACT_PHONE.replace(/\s/g, "")}`} className="font-semibold text-sky underline">{CONTACT_PHONE}</a>
+    </>
+  );
 }
 
 export function LegalPage({ title, intro, children }: { title: string; intro: string; children: ReactNode }) {
