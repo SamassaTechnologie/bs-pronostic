@@ -1054,3 +1054,38 @@ def test_machine_generator(populated, client, monkeypatch):
         for m in db.scalars(select(Match).where(Match.id.in_(list(saved)))).all():
             m.status = saved[m.id]
         db.commit()
+
+
+def test_allsports_odds_popular(populated, monkeypatch):
+    """Cotes AllSportsAPI des grands championnats : compétition vérifiée par son nom, match retrouvé par équipes
+    et horaire, au plus toutes les 12 heures, budget quotidien respecté."""
+    from app.config import get_settings
+    from app.models import OddsQuote
+    from app.providers.allsports import AllSports
+    from app.services import allsports_sync
+    with SessionLocal() as db:
+        m = db.scalars(select(Match).join(Competition, Match.competition_id == Competition.id).where(
+            Competition.code == "ENG1")).first()
+        saved = (m.status, m.kickoff)
+        now = m.kickoff - timedelta(days=1)
+        m.status = "SCHEDULED"
+        db.commit()
+        row = {"event_key": 99, "league_name": "Premier League", "event_home_team": m.home_team.name,
+               "event_away_team": m.away_team.name, "event_date": m.kickoff.strftime("%Y-%m-%d"),
+               "event_time": m.kickoff.strftime("%H:%M")}
+        calls = []
+        monkeypatch.setattr(AllSports, "fixtures", lambda self, a, b, league_id=None: calls.append(league_id) or [row])
+        monkeypatch.setattr(AllSports, "odds", lambda self, a, b, league_id=None: {
+            "99": [{"odd_bookmakers": "Bet365", "odd_1x": "1.30", "o+1.5": "1.25", "bts_yes": "1.80"}]})
+        monkeypatch.setattr(get_settings(), "allsports_key", "test")
+        res = allsports_sync.odds_popular(db, now, force=True)
+        assert res is not None and 152 in calls
+        q = {o.market_key: o.price for o in db.scalars(select(OddsQuote).where(
+            OddsQuote.match_id == m.id, OddsQuote.source == "allsports"))}
+        assert q == {"1X": 1.30, "O1.5": 1.25, "BTTS_Y": 1.80}
+        assert allsports_sync.odds_popular(db, now + timedelta(hours=1)) is None  # 12 h minimum
+        assert allsports_sync._league_ok(row, "premier league") and not allsports_sync._league_ok({"league_name": "Ligue 2"}, "ligue 1")
+        for o in db.scalars(select(OddsQuote).where(OddsQuote.source == "allsports")).all():
+            db.delete(o)
+        m.status, m.kickoff = saved
+        db.commit()

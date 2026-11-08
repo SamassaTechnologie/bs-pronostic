@@ -24,7 +24,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import Competition, Match, Setting, SyncRun, utcnow
+from ..models import ApiUsage, Competition, Match, Setting, SyncRun, utcnow
 from ..providers.allsports import AllSports, details_of, merge_details, minute_of, status_of, kickoff_of, _pair
 from ..providers.base import ProviderError
 from ..providers.names import similarity
@@ -216,6 +216,10 @@ def run_allsports(db: Session, kinds: set, now: datetime, force: bool, days_ahea
                 out.append(fin)
     finally:
         _add_api_usage(db, p.name, p.requests_made)
+    if "upcoming" in kinds:
+        res = odds_popular(db, now, force)
+        if res:
+            out.append(res)
     return out
 
 
@@ -361,3 +365,85 @@ def prematch_lineups(db: Session, now: datetime, every_seconds: int = 1200) -> i
             n += 1
     db.commit()
     return n
+
+
+# Cotes des grands championnats européens (marchés absents de football-data.co.uk : double chance, +1,5, les deux
+# marquent…). Identifiants AllSportsAPI, vérifiés à chaque appel par le nom de la compétition renvoyé.
+ODDS_ALLSPORTS = {
+    "ENG1": (152, "premier league"), "ESP1": (302, "laliga|primera division"), "ITA1": (207, "serie a"), "GER1": (175, "bundesliga"),
+    "FRA1": (168, "ligue 1"), "NED1": (244, "eredivisie"), "POR1": (266, "primeira liga|liga portugal"),
+    "UCL": (3, "champions league"), "UEL": (4, "europa league"), "UECL": (683, "conference league"),
+}
+ODDS_EVERY_HOURS = 12
+ODDS_BUDGET_MARGIN = 80
+
+
+def _league_ok(x: dict, expected: str) -> bool:
+    import unicodedata
+    norm = lambda s: unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower().replace(" ", "")  # noqa: E731
+    return any(norm(e) in norm(x.get("league_name")) for e in expected.split("|"))
+
+
+def odds_popular(db: Session, now: datetime, force: bool = False) -> Optional[dict]:
+    """Cotes bookmaker (AllSportsAPI) des matchs à venir des grands championnats : 2 requêtes par championnat,
+    au plus toutes les 12 heures, seulement s'il reste de la marge sur le budget quotidien."""
+    from .settings_service import get_provider_flags
+    from .sync import _add_api_usage, _run, save_odds
+    cfg = get_settings()
+    if not cfg.allsports_key or not get_provider_flags(db).get("allsports", True):
+        return None
+    memo = db.get(Setting, "allsports_odds") or Setting(key="allsports_odds", value={})
+    last = (memo.value or {}).get("at")
+    if not force and last and now - datetime.fromisoformat(last) < timedelta(hours=ODDS_EVERY_HOURS):
+        return None
+    used = db.get(ApiUsage, ("allsports", now.date().isoformat()))
+    if (used.requests if used else 0) > cfg.allsports_daily_budget - ODDS_BUDGET_MARGIN:
+        return None
+    comps = {c.code: c for c in db.scalars(select(Competition).where(
+        Competition.enabled.is_(True), Competition.code.in_(list(ODDS_ALLSPORTS)))).all()}
+    if not comps or not db.scalar(select(func.count(Match.id)).where(
+            Match.competition_id.in_([c.id for c in comps.values()]), Match.status == "SCHEDULED",
+            Match.kickoff > now, Match.kickoff < now + timedelta(days=3))):
+        return None
+    p = make_provider(db)
+
+    def work(run: SyncRun) -> tuple[int, str]:
+        d_from, d_to = now.date().isoformat(), (now + timedelta(days=3)).date().isoformat()
+        n_matches, n_odds, errors = 0, 0, []
+        for code, comp in comps.items():
+            league_id, expected = ODDS_ALLSPORTS[code]
+            todo = db.scalars(select(Match).where(Match.competition_id == comp.id, Match.status == "SCHEDULED",
+                                                  Match.kickoff > now, Match.kickoff < now + timedelta(days=3))).unique().all()
+            if not todo:
+                continue
+            try:
+                rows = [x for x in p.fixtures(d_from, d_to, league_id) if _league_ok(x, expected)]
+                if not rows:
+                    errors.append(f"{comp.name} : compétition non reconnue")
+                    continue
+                odds = p.odds(d_from, d_to, league_id)
+            except ProviderError as exc:
+                errors.append(f"{comp.name} : {exc}")
+                if _account_problem(exc):
+                    break
+                continue
+            for x in rows:
+                quotes = odds.get(str(x.get("event_key")))
+                m = _find(todo, x) if quotes else None
+                if m is not None:
+                    k = save_odds(db, m.id, p.odds_records(quotes), p.name)
+                    n_odds += k
+                    n_matches += 1 if k else 0
+            db.commit()
+        memo.value = {"at": now.isoformat()}
+        db.merge(memo)
+        db.commit()
+        msg = f"cotes de {n_matches} match(s) des grands championnats, {n_odds} cotes ({p.requests_made} requêtes)"
+        if errors:
+            msg += " ; " + " | ".join(errors[:3])
+        return n_matches, msg
+
+    try:
+        return _run(db, p.name, "cotes", work)
+    finally:
+        _add_api_usage(db, p.name, p.requests_made)
