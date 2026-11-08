@@ -417,9 +417,11 @@ def odds_popular(db: Session, now: datetime, force: bool = False) -> Optional[di
             if not todo:
                 continue
             try:
-                rows = [x for x in p.fixtures(d_from, d_to, league_id) if _league_ok(x, expected)]
+                raw = p.fixtures(d_from, d_to, league_id)
+                rows = [x for x in raw if _league_ok(x, expected)]
                 if not rows:
-                    errors.append(f"{comp.name} : compétition non reconnue")
+                    seen = sorted({f"{x.get('country_name')}/{x.get('league_name')}" for x in raw})[:2]
+                    errors.append(f"{comp.name} : compétition non reconnue ({', '.join(seen) or 'aucun match'})")
                     continue
                 odds = p.odds(d_from, d_to, league_id)
             except ProviderError as exc:
