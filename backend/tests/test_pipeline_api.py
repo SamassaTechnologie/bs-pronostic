@@ -1011,7 +1011,8 @@ def test_response_cache(client, monkeypatch):
             break
         _time.sleep(0.1)
     assert client.get("/api/meta").headers.get("x-cache") == "HIT"
-    assert "x-cache" not in client.get("/api/live").headers
+    assert client.get("/api/live").headers.get("x-cache") in ("MISS", "HIT")  # direct : 40 s au plus
+    assert client.get("/api/live").headers.get("x-cache") == "HIT"
     assert client.get("/api/meta", headers={"X-Cache-Refresh": "1"}).headers.get("x-cache") == "MISS"
     rc.reset()
 

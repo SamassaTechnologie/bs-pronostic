@@ -18,7 +18,11 @@ MAX_STALE = 600.0
 MAX_ITEMS = 300
 CACHEABLE = re.compile(
     r"^/api/(dashboard|meta|track-record|public-summary|calibration|competitions(/[A-Za-z0-9_-]+)?|stats(/[a-z0-9-]+)?"
-    r"|predictions|matches|history|performance|recent-results|teams/\d+|matches/\d+(/insights)?)$")
+    r"|predictions|matches|history|performance|recent-results|teams/\d+|matches/\d+(/insights|/live)?|live)$")
+# Le direct : réponse gardée 40 s au plus ; au-delà, l'ancienne est servie pendant que les scores sont rafraîchis
+# en arrière-plan (les sources de scores sont interrogées hors du clic du visiteur).
+LIVE = re.compile(r"^/api/(live|matches/\d+/live)\?")
+LIVE_TTL = 40.0
 _lock = threading.Lock()
 _store: dict[str, tuple[float, int, bytes, str, int]] = {}  # clé → (instant, statut, corps, type, génération)
 _refreshing: set[str] = set()
@@ -44,7 +48,10 @@ def lookup(key: str):
         if not hit:
             return None, None
         age = time.monotonic() - hit[0]
-        if hit[4] == _gen and age < ttl():
+        fresh_for = min(ttl(), LIVE_TTL) if LIVE.match(key) else ttl()
+        if LIVE.match(key) and age < fresh_for:
+            return hit, "fresh"  # le direct ne dépend pas des analyses : seul l'âge compte
+        if hit[4] == _gen and age < fresh_for:
             return hit, "fresh"
         if age < MAX_STALE:
             return hit, "stale"
@@ -69,7 +76,7 @@ def put(key: str, status: int, body: bytes, ctype: str, gen: int) -> None:
     if ttl() <= 0:
         return
     with _lock:
-        if gen != _gen and key in _store:  # données modifiées pendant le calcul : on garde l'ancienne marquée périmée
+        if gen != _gen and key in _store and not LIVE.match(key):  # données modifiées pendant le calcul : on garde l'ancienne marquée périmée
             return
         if len(_store) >= MAX_ITEMS:
             for k in sorted(_store, key=lambda k: _store[k][0])[: MAX_ITEMS // 3]:
