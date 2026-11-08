@@ -106,7 +106,7 @@ export function AuthForm({ next, initialMode }: { next: string; initialMode: Mod
         {mode === "signup" && (
           <label className="flex items-start gap-2 text-sm text-ink">
             <input type="checkbox" name="adult" value="1" className="mt-1 h-4 w-4" />
-            <span>J&apos;ai 18 ans ou plus et je comprends que les pronostics ne garantissent aucun gain.</span>
+            <span>J&apos;ai 18 ans ou plus, je comprends que les pronostics ne garantissent aucun gain et j&apos;accepte les <a href="/conditions" target="_blank" className="font-semibold text-sky underline">conditions d&apos;utilisation</a> et la <a href="/confidentialite" target="_blank" className="font-semibold text-sky underline">politique de confidentialité</a>.</span>
           </label>
         )}
         {error && <p className="rounded-lg bg-brick-soft px-3 py-2 text-sm text-brick" role="alert">{error}</p>}

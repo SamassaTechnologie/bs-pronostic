@@ -10,7 +10,10 @@ import { backend } from "@/lib/api";
 import type { Meta } from "@/lib/types";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://sam-prediction.vercel.app"),
   title: { default: "SAM-Prédiction", template: "%s · SAM-Prédiction" },
+  openGraph: { type: "website", locale: "fr_FR", siteName: "SAM-Prédiction" },
+  twitter: { card: "summary_large_image" },
   description: "L'analyse avant le pronostic. Probabilités football calculées sur données réelles.",
   applicationName: "SAM-Prédiction",
   appleWebApp: { capable: true, title: "SAM-Prédiction", statusBarStyle: "black-translucent" },
@@ -59,6 +62,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </FollowsProvider>
         <footer className="mx-auto max-w-5xl px-4 pb-28 text-center text-xs text-steel md:pb-8">
           Probabilités statistiques, aucune garantie de gain. Interdit aux mineurs. Pariez de manière responsable.
+          <span className="mt-1.5 flex flex-wrap justify-center gap-x-3 gap-y-1">
+            <Link href="/jeu-responsable" className="underline">Jeu responsable</Link>
+            <Link href="/conditions" className="underline">Conditions</Link>
+            <Link href="/confidentialite" className="underline">Confidentialité</Link>
+          </span>
         </footer>
         <MobileTabs signedIn={signedIn} />
         <SwRegister />
