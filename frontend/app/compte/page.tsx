@@ -30,7 +30,7 @@ export default async function Compte() {
       </Section>
 
       <div className="mt-7 grid gap-2.5">
-        <Link href="/compte/alertes" className="rounded-xl border-2 border-amber bg-white px-4 py-3.5 font-semibold">🔔 Mes alertes (banker du jour, Sélection SAM…)</Link>
+        <Link href="/compte/alertes" className="rounded-xl border-2 border-amber bg-white px-4 py-3.5 font-semibold">🔔 Mes alertes (bankers du jour, Sélection SAM…)</Link>
         <Link href="/resultats" className="rounded-xl border border-line bg-white px-4 py-3.5 font-semibold">Résultats vérifiés</Link>
         <Link href="/methodologie" className="rounded-xl border border-line bg-white px-4 py-3.5 font-semibold">Comment sont calculées les probabilités</Link>
         <Link href="/plus" className="rounded-xl border border-line bg-white px-4 py-3.5 font-semibold">Sources de données et informations</Link>

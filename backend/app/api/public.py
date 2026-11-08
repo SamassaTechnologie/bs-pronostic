@@ -289,7 +289,7 @@ def dashboard(tz: Optional[str] = None, db: Session = Depends(get_db)):
         "selection": selection,
         "value_picks": value_picks,
         "combo_picks": combo_picks,
-        "bankers": bankers[:2],
+        "bankers": bankers[:8],
         "banker_performance": {k: banker_perf[k] for k in ("total", "n", "won", "hit_rate", "avg_probability")},
         "combo_performance": {k: combo_perf[k] for k in ("total", "n", "won", "hit_rate", "avg_probability")},
         "value_settings": {k: s[k] for k in ("value_min_odds", "value_max_odds", "value_min_probability",
@@ -576,7 +576,7 @@ def track_record(db: Session = Depends(get_db)):
     keys = ("total", "n", "won", "lost", "hit_rate", "avg_probability", "gap", "pending", "staked", "roi")
     cats = []
     for key, label, hint, kw in (
-            ("banker", "Le banker du jour", "Un seul pronostic par jour, le plus solide", {"banker": True}),
+            ("banker", "Les bankers du jour", "2 à 3 pronostics par jour, les plus solides", {"banker": True}),
             ("selection", "Sélection SAM", "Les pronostics les plus sûrs, figés avant le match", {"featured": True}),
             ("value", "Pronostics à cote", "Cote 1,40 à 2,20 dans les grands championnats", {"value": True}),
             ("combo", "Pronostics combinés", "Deux conditions sur un même match", {"combo": True}),

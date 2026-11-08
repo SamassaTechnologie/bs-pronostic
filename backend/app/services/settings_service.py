@@ -12,7 +12,7 @@ from ..models import Setting
 PROVIDER_NAMES = ("football_data_co_uk", "api_football", "football_data_org", "allsports")
 
 BOUNDS = {
-    "banker_min_probability": (0.6, 0.95), "banker_min_confidence": (50, 95), "banker_per_day": (0, 3),
+    "banker_min_probability": (0.6, 0.95), "banker_min_confidence": (50, 95), "banker_per_day": (0, 5),
     "combo_min_probability": (0.35, 0.9), "combo_min_confidence": (40, 95), "combo_min_odds": (1.2, 5.0),
     "combo_max_odds": (1.5, 10.0), "combo_max_per_day": (0, 10),
     "tier_a": (0.5, 0.99), "tier_b": (0.5, 0.99), "tier_c": (0.5, 0.99),

@@ -867,7 +867,7 @@ def test_banker_and_track_record(populated, client):
     with SessionLocal() as db:
         bk = db.scalars(select(Prediction).where(Prediction.banker.is_(True))).all()
         assert all(p.probability >= 0.75 and p.confidence >= 75 for p in bk)
-        assert not bk or max(Counter(p.match.kickoff.date() for p in bk).values()) == 1
+        assert not bk or max(Counter(p.match.kickoff.date() for p in bk).values()) <= 3
     tr = client.get("/api/track-record").json()
     assert [c["key"] for c in tr["categories"]] == ["banker", "selection", "value", "combo", "all"]
     allp = next(c for c in tr["categories"] if c["key"] == "all")["periods"]["all"]

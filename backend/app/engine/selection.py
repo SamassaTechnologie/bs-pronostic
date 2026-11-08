@@ -29,10 +29,10 @@ DEFAULT_SETTINGS: dict = {
     "combo_max_odds": 3.20,
     "combo_max_per_day": 4,
     "combo_popular_only": True,
-    # Le banker du jour : un seul pronostic par jour, le plus solide des grands championnats
+    # Les bankers du jour : 2 à 3 pronostics par jour, les plus solides des grands championnats
     "banker_min_probability": 0.75,
     "banker_min_confidence": 75,
-    "banker_per_day": 1,
+    "banker_per_day": 3,
     "banker_popular_only": True,  # pronostics à cote : grands championnats seulement (données et cotes plus sûres)
     # Sélection SAM du jour : courte liste, critères renforcés
     "featured_min_probability": 0.72,

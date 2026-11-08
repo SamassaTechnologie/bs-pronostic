@@ -116,7 +116,7 @@ def build_messages(db: Session, sub: PushSubscription, now: datetime) -> list[tu
                 continue
             m = pr.match
             out.append(("banker", [ref], {
-                "title": "⭐ Le banker du jour",
+                "title": "⭐ Banker du jour",
                 "body": f"{_match_txt(m)} ({_kick(m)}) : {pr.market_label}, {round(pr.probability * 100)} %",
                 "url": f"/matchs/{m.id}", "tag": f"banker-{pr.id}"}))
 

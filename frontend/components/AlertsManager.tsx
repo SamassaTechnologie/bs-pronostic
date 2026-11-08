@@ -7,7 +7,7 @@ type Env = "loading" | "unsupported" | "ios-browser" | "denied" | "ready" | "off
 
 const DEFAULT: Prefs = { banker: true, selection: true, combo: false, results: true, competitions: [] };
 const TOGGLES: [keyof Omit<Prefs, "competitions">, string, string][] = [
-  ["banker", "Le banker du jour", "Un seul pronostic par jour, le plus solide"],
+  ["banker", "Les bankers du jour", "2 à 3 pronostics par jour, les plus solides"],
   ["selection", "Sélection SAM", "Les nouveaux pronostics de la sélection, regroupés"],
   ["combo", "Pronostics combinés", "Deux conditions sur un même match"],
   ["results", "Résultat du banker", "Gagné ou perdu, dès la fin du match"],

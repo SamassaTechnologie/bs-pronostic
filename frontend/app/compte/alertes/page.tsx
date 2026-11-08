@@ -15,7 +15,7 @@ export default async function Alertes() {
     <>
       <Link href="/compte" className="px-1 text-sm font-semibold text-sky">‹ Mon compte</Link>
       <h1 className="mt-1 px-1 font-display text-2xl font-bold tracking-tight">Mes alertes</h1>
-      <p className="mb-4 px-1 text-sm text-steel">Recevez le banker du jour et les nouveaux pronostics sans ouvrir l&apos;application. Gratuit, désactivable à tout moment.</p>
+      <p className="mb-4 px-1 text-sm text-steel">Recevez les bankers du jour et les nouveaux pronostics sans ouvrir l&apos;application. Gratuit, désactivable à tout moment.</p>
       <AlertsManager comps={comps.ok ? comps.data.items : []} />
     </>
   );

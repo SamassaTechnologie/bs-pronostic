@@ -142,7 +142,7 @@ export default async function Home() {
         )}
       </section>
 
-      {d.bankers?.[0] && <BankerCard pick={d.bankers[0]} perf={d.banker_performance} tz={tz} />}
+      {d.bankers && d.bankers.length > 0 && <BankerCard picks={d.bankers} perf={d.banker_performance} tz={tz} />}
 
       <nav className="mt-4 grid grid-cols-4 gap-2" aria-label="Accès rapides">
         {[
