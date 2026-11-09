@@ -309,3 +309,42 @@ def cup_pooling(body: dict, db: Session = Depends(get_db)):
 def merge_international(db: Session = Depends(get_db)):
     from ..services.sync import merge_international_duplicates
     return merge_international_duplicates(db)
+
+
+@cron_router.post("/diagnostic-sportapi")
+def diagnostic_sportapi(db: Session = Depends(get_db)):
+    """Couverture réelle de SportAPI.ai avec la clé du serveur (lecture seule, ~4 requêtes) : championnats présents,
+    championnats africains suivis, champs disponibles dans le détail d'un match (compositions, événements, cotes…)."""
+    from collections import Counter
+    from ..services.sportapi import SportApiError, _get, fixtures_on
+    out: dict = {}
+    from datetime import datetime, timedelta, timezone
+    today = datetime.now(timezone.utc).date()
+    rows = []
+    try:
+        for d in (today, today + timedelta(days=1)):
+            rows += fixtures_on(db, d.isoformat())
+    except SportApiError as exc:
+        return {"error": str(exc)}
+    leagues = Counter(f"{x.get('country') or x.get('league_country') or '?'} / {x.get('league') or x.get('league_name') or '?'}" for x in rows)
+    out["fixtures"] = len(rows)
+    out["sample_fixture_keys"] = sorted(rows[0].keys()) if rows else []
+    out["n_leagues"] = len(leagues)
+    out["africa"] = sorted(k for k in leagues if any(w in k.lower() for w in (
+        "mali", "senegal", "ivory", "côte", "cote d", "morocco", "maroc", "algeria", "algérie", "tunisia", "egypt",
+        "nigeria", "ghana", "cameroon", "south africa", "caf", "africa", "guinea", "burkina")))
+    out["leagues_sample"] = [k for k, _ in leagues.most_common(40)]
+    detail_keys, has = {}, {}
+    for x in [r for r in rows if r.get("status") in ("FT", "LIVE")][:2] or rows[:1]:
+        try:
+            fx = _get(db, f"/fixtures/{x['id']}")
+        except SportApiError as exc:
+            out["detail_error"] = str(exc)
+            break
+        f = fx.get("fixture") or {}
+        detail_keys = {"root": sorted(fx.keys()), "fixture": sorted(f.keys())}
+        for k in ("lineups", "events", "statistics", "stats", "odds", "injuries"):
+            v = fx.get(k, f.get(k))
+            has[k] = (type(v).__name__, len(v) if hasattr(v, "__len__") else None) if v is not None else None
+    out["detail_keys"], out["detail_has"] = detail_keys, has
+    return out
