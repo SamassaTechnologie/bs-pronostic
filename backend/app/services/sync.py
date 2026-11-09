@@ -634,6 +634,12 @@ def run_sync(db: Session, kinds: Iterable[str] = ("history", "upcoming", "enrich
     if flags.get("allsports", True):
         from .allsports_sync import run_allsports
         results.extend(run_allsports(db, kinds, now, force, int(sel["days_ahead"])))
+    try:  # sélections nationales (trêves internationales)
+        from .intl import run as run_intl
+        results.extend(run_intl(db, kinds, now, force))
+    except Exception as exc:  # jamais bloquant pour le reste de la synchronisation
+        db.rollback()
+        log.exception("Sélections : %s", exc)
     if not results:
         results.append({"provider": "-", "kind": "-", "status": "skipped", "items": 0,
                         "message": "Aucune source active pour les compétitions activées"})

@@ -5,7 +5,7 @@ Cette mise en avant ne modifie aucune probabilité ni la Sélection SAM (choisie
 """
 from __future__ import annotations
 
-POPULAR = ("UCL", "ENG1", "ESP1", "ITA1", "GER1", "FRA1", "UEL", "UECL", "POR1", "NED1", "CAF1")
+POPULAR = ("UCL", "ENG1", "ESP1", "ITA1", "GER1", "FRA1", "UEL", "UECL", "POR1", "NED1", "CAF1", "INT")
 _RANK = {code: i for i, code in enumerate(POPULAR)}
 
 

@@ -23,6 +23,10 @@ from ..config import get_settings
 from ..models import ApiUsage, Competition, Match, SyncRun
 from ..providers.names import similarity
 
+
+def team_similarity(name: str, team) -> float:
+    return max(similarity(name, team.name), similarity(name, team.norm_name or ""))
+
 log = logging.getLogger("sam.sportapi")
 UTC = timezone.utc
 BASE = "https://sportapi.ai/api"
@@ -89,8 +93,8 @@ def find(cands: list[Match], x: dict) -> Optional[Match]:
     for m in cands:
         if abs((m.kickoff - ko).total_seconds()) > 3 * 3600:
             continue
-        s = min(max(similarity(home, m.home_team.name), similarity(x.get("home_short") or "", m.home_team.name)),
-                max(similarity(away, m.away_team.name), similarity(x.get("away_short") or "", m.away_team.name)))
+        s = min(max(team_similarity(home, m.home_team), similarity(x.get("home_short") or "", m.home_team.name)),
+                max(team_similarity(away, m.away_team), similarity(x.get("away_short") or "", m.away_team.name)))
         if s > score:
             best, score = m, s
     return best if score >= 80 else None

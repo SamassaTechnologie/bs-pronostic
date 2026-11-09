@@ -241,12 +241,17 @@ _lock = threading.Lock()
 _cache: dict = {"at": None, "live": [], "error": None}
 
 
+def team_similarity(name: str, team) -> float:
+    """Nom d'affichage ou nom de rapprochement (les sélections s'affichent en français, les sources sont en anglais)."""
+    return max(similarity(name, team.name), similarity(name, team.norm_name or ""))
+
+
 def _find(cands: list[Match], x: dict) -> Optional[Match]:
     ko = kickoff_of(x)
     home, away = x.get("event_home_team") or "", x.get("event_away_team") or ""
     if ko is None:
         return None
-    scored = sorted(((min(similarity(home, m.home_team.name), similarity(away, m.away_team.name)), m)
+    scored = sorted(((min(team_similarity(home, m.home_team), team_similarity(away, m.away_team)), m)
                      for m in cands if abs((m.kickoff - ko).total_seconds()) <= 3 * 3600),
                     key=lambda t: t[0], reverse=True)
     if not scored:

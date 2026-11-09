@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     ai_daily_budget: int = 400  # générations maximum par jour (toutes sources)
     ai_cache_hours: int = 12  # une analyse IA reste valable 12 h avant le match
     ai_timeout: float = 45.0
+    intl_enabled: bool = True  # sélections nationales (historique public + calendrier AllSportsAPI / SportAPI.ai)
     response_cache_seconds: int = 90  # cache des réponses publiques (0 = désactivé)
     # Alertes Web Push (clés VAPID ; la clé privée reste côté serveur)
     vapid_public_key: str = ""

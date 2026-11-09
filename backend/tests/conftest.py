@@ -10,7 +10,8 @@ os.environ["ADMIN_API_TOKEN"] = "jeton-admin-test"
 os.environ["CRON_SECRET"] = "secret-cron-test"
 os.environ["API_FOOTBALL_KEY"] = ""
 os.environ["FOOTBALL_DATA_ORG_KEY"] = ""
-os.environ["RESPONSE_CACHE_SECONDS"] = "0"  # le cache court est testé séparément
+os.environ["RESPONSE_CACHE_SECONDS"] = "0"
+os.environ["INTL_ENABLED"] = "0"  # sélections : testées séparément, sans réseau  # le cache court est testé séparément
 
 import pytest  # noqa: E402
 

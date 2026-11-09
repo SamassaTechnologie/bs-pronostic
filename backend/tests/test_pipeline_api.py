@@ -1117,3 +1117,29 @@ def test_allsports_end_of_subscription(populated, monkeypatch):
         assert comp.enabled is True
         comp.primary_source, comp.enabled = old
         db.commit()
+
+
+def test_international_matches(populated, monkeypatch):
+    """Sélections nationales : historique public (sélections reconnues seulement, depuis 2021), noms affichés en
+    français et rapprochés en anglais, calendrier des fournisseurs filtré (ni femmes, ni jeunes, ni clubs)."""
+    from app.config import get_settings
+    from app.services import intl
+    from app.models import Team
+    monkeypatch.setattr(get_settings(), "intl_enabled", True)
+    csv_text = "date,home_team,away_team,home_score,away_score,tournament,city,country,neutral\n" + "\n".join(
+        [f"2025-0{(i % 9) + 1}-1{i % 9},Germany,Mali,{i % 3},{(i + 1) % 2},Friendly,Berlin,Germany,FALSE" for i in range(9)]
+        + ["2025-03-20,Padania,Tibet,1,0,CONIFA,x,y,TRUE", "2019-03-20,Germany,Mali,9,0,Friendly,x,y,FALSE"])
+    with SessionLocal() as db:
+        n, msg = intl.import_history(db, NOW + timedelta(days=400), csv_text)
+        assert n == 9, msg
+        comp = intl.competition(db)
+        assert comp.country == intl.COUNTRY and comp.enabled
+        names = {t.name for t in db.scalars(select(Team).where(Team.country == intl.COUNTRY))}
+        assert names == {"Allemagne", "Mali"}
+        assert intl.import_history(db, NOW + timedelta(days=400), csv_text)[0] == 0  # pas de doublon
+    assert intl.canon("Côte d'Ivoire") == "Ivory Coast" and intl.canon("Korea Republic") == "South Korea"
+    assert intl.canon("Germany W") is None and intl.canon("Mali U23") is None and intl.canon("Real Madrid") is None
+    assert intl.is_international("UEFA Nations League") and intl.is_international("Africa Cup of Nations - Qualification")
+    assert not intl.is_international("UEFA Nations League Women") and not intl.is_international("UEFA Champions League")
+    assert not intl.is_international("Friendlies U21")
+    assert intl.french("Netherlands") == "Pays-Bas"
