@@ -36,7 +36,8 @@ class Settings(BaseSettings):
     allsports_daily_budget: int = 300  # requêtes maximum par jour (arrêt automatique au-delà)
     allsports_live_seconds: int = 300  # intervalle minimal entre deux appels « direct »
     sportapi_key: str = ""  # SportAPI.ai : résultats rapides et direct de secours (gratuit 2 000 req/jour)
-    sportapi_daily_budget: int = 400  # plafond prudent (14 000/mois sur l'offre gratuite)
+    sportapi_daily_budget: int = 220  # offre gratuite : 7 000/mois à partir du 1er décembre 2026 (220 × 31 < 7 000)
+    sportapi_live_seconds: int = 360  # direct de secours : un appel toutes les 6 minutes au plus
     http_timeout: float = 25.0
     http_user_agent: str = "SAM-Prediction/1.0 (+analyse statistique)"
 

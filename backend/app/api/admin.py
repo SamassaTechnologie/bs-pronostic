@@ -73,7 +73,11 @@ class ProviderToggle(BaseModel):
 @router.put("/providers/{name}")
 def toggle_provider(name: str, body: ProviderToggle, db: Session = Depends(get_db)):
     try:
-        return set_provider_flag(db, name, body.enabled)
+        flags = set_provider_flag(db, name, body.enabled)
+        if name == "allsports" and body.enabled:
+            from ..services.allsports_sync import resume
+            resume(db)  # championnats mis en pause à la fin de l'abonnement : ils reviennent
+        return flags
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 

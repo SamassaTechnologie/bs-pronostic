@@ -96,7 +96,7 @@ def find(cands: list[Match], x: dict) -> Optional[Match]:
     return best if score >= 80 else None
 
 
-def complete_results(db: Session, now: datetime, max_details: int = 30) -> Optional[dict]:
+def complete_results(db: Session, now: datetime, max_details: int = 8) -> Optional[dict]:
     """Scores finaux (et mi-temps) des matchs terminés encore sans résultat ; journalisé dans sync_runs."""
     from .sync import _run
     cfg = get_settings()
@@ -150,7 +150,7 @@ def live_fallback(db: Session, now: datetime, cands: list[Match]) -> dict:
     if not cfg.sportapi_key or not cands:
         return {"ok": False, "live": [], "updated": 0, "error": None}
     with _lock:
-        if _cache["at"] is None or time.monotonic() - _cache["at"] >= cfg.allsports_live_seconds:
+        if _cache["at"] is None or time.monotonic() - _cache["at"] >= cfg.sportapi_live_seconds:
             _cache["at"] = time.monotonic()
             try:
                 _cache.update(rows=fixtures_on(db, now.date().isoformat()), error=None)

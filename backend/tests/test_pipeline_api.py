@@ -1090,3 +1090,30 @@ def test_allsports_odds_popular(populated, monkeypatch):
             db.delete(o)
         m.status, m.kickoff = saved
         db.commit()
+
+
+def test_allsports_end_of_subscription(populated, monkeypatch):
+    """Fin de l'essai AllSportsAPI : 3 refus de la clé → source coupée, championnats dont c'est la seule source mis en
+    pause (rien supprimé), notre propre budget n'est jamais pris pour un refus ; réactivation → tout revient."""
+    from app.services import allsports_sync as a
+    from app.services.settings_service import get_provider_flags, set_provider_flag
+    with SessionLocal() as db:
+        comp = db.scalars(select(Competition)).first()
+        old = (comp.primary_source, comp.enabled)
+        comp.primary_source, comp.enabled = "allsports", True
+        db.commit()
+        assert a.note_result(db, False, "AllSportsAPI : budget quotidien prudent atteint") is False
+        assert a.note_result(db, False, "AllSportsAPI : requête refusée — Invalid API key") is False
+        assert a.note_result(db, True) is False  # un succès remet le compteur à zéro
+        for _ in range(2):
+            assert a.note_result(db, False, "AllSportsAPI : HTTP 401") is False
+        assert a.note_result(db, False, "AllSportsAPI : HTTP 401") is True
+        db.refresh(comp)
+        assert get_provider_flags(db)["allsports"] is False and comp.enabled is False
+        assert db.get(Match, db.scalars(select(Match.id).where(Match.competition_id == comp.id)).first()) is not None
+        set_provider_flag(db, "allsports", True)
+        assert comp.code in a.resume(db)
+        db.refresh(comp)
+        assert comp.enabled is True
+        comp.primary_source, comp.enabled = old
+        db.commit()

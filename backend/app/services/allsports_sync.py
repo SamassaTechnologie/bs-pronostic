@@ -216,11 +216,21 @@ def run_allsports(db: Session, kinds: set, now: datetime, force: bool, days_ahea
                 out.append(fin)
     finally:
         _add_api_usage(db, p.name, p.requests_made)
-    if "upcoming" in kinds:
+    if "upcoming" in kinds and get_provider_flags_safe(db):
         res = odds_popular(db, now, force)
         if res:
             out.append(res)
+    errs = [r for r in out if r.get("status") == "error"]
+    if errs and len(errs) == len(out):
+        note_result(db, False, errs[0].get("message") or "")
+    elif out:
+        note_result(db, True)
     return out
+
+
+def get_provider_flags_safe(db: Session) -> bool:
+    from .settings_service import get_provider_flags
+    return bool(get_provider_flags(db).get("allsports", True))
 
 
 # ---------------------------------------------------------------------------
@@ -283,8 +293,10 @@ def live_scores(db: Session, now: datetime, skip_comp_ids: set[int]) -> dict:
         except ProviderError as exc:
             _cache.update(live=[], error=str(exc))
             _add_api_usage(db, p.name, p.requests_made)
+            note_result(db, False, str(exc))
             return {"ok": False, "live": [], "updated": 0, "error": str(exc)}
         _add_api_usage(db, p.name, p.requests_made)
+        note_result(db, True)
         live, updated = [], 0
         for x in rows:
             any_m = _find(every, x)
@@ -449,3 +461,73 @@ def odds_popular(db: Session, now: datetime, force: bool = False) -> Optional[di
         return _run(db, p.name, "cotes", work)
     finally:
         _add_api_usage(db, p.name, p.requests_made)
+
+
+# --- Fin d'abonnement : arrêt automatique et mise en pause des championnats qui en dépendent ----------------------
+REFUSALS_BEFORE_SHUTDOWN = 3
+
+
+def _key_refused(msg: str) -> bool:
+    """Refus de la clé par AllSportsAPI (abonnement terminé, clé invalide) — pas notre propre budget prudent."""
+    m = (msg or "").lower()
+    return "budget" not in m and any(w in m for w in ("refusée", "http 401", "http 403", "expired", "invalid"))
+
+
+def note_result(db: Session, ok: bool, message: str = "") -> bool:
+    """Compte les refus consécutifs de la clé ; au 3e, coupe la source et met en pause ses championnats.
+    Retourne True si la source vient d'être coupée."""
+    row = db.get(Setting, "allsports_refusals")
+    n = int((row.value or {}).get("n", 0)) if row else 0
+    if ok:
+        if n:
+            row.value = {"n": 0}
+            db.commit()
+        return False
+    if not _key_refused(message):
+        return False
+    n += 1
+    if row is None:
+        db.add(Setting(key="allsports_refusals", value={"n": n, "last": message[:200]}))
+    else:
+        row.value = {"n": n, "last": message[:200]}
+    db.commit()
+    if n >= REFUSALS_BEFORE_SHUTDOWN:
+        shutdown(db, message)
+        return True
+    return False
+
+
+def shutdown(db: Session, reason: str = "") -> list[str]:
+    """Coupe AllSportsAPI et met en pause (sans rien supprimer) les championnats dont c'est la seule source."""
+    from .settings_service import set_provider_flag
+    set_provider_flag(db, "allsports", False)
+    comps = db.scalars(select(Competition).where(Competition.enabled.is_(True),
+                                                 Competition.primary_source == "allsports")).all()
+    codes = [c.code for c in comps]
+    for c in comps:
+        c.enabled = False
+    memo = db.get(Setting, "allsports_paused") or Setting(key="allsports_paused", value={})
+    memo.value = {"codes": sorted(set((memo.value or {}).get("codes", [])) | set(codes)), "reason": (reason or "")[:200],
+                  "at": utcnow().isoformat()}
+    db.merge(memo)
+    db.add(SyncRun(provider="allsports", kind="sécurité", status="error", items=len(codes), finished_at=utcnow(),
+                   message=f"AllSportsAPI désactivé automatiquement (clé refusée) ; {len(codes)} championnat(s) mis "
+                           f"en pause : {', '.join(codes) or 'aucun'}. Le direct passe par SportAPI.ai."))
+    db.commit()
+    log.warning("AllSportsAPI désactivé automatiquement : %s", reason)
+    return codes
+
+
+def resume(db: Session) -> list[str]:
+    """Réactivation (abonnement repris) : la source et les championnats mis en pause reviennent."""
+    memo = db.get(Setting, "allsports_paused")
+    codes = (memo.value or {}).get("codes", []) if memo else []
+    for c in db.scalars(select(Competition).where(Competition.code.in_(codes))).all():
+        c.enabled = True
+    if memo:
+        memo.value = {"codes": []}
+    row = db.get(Setting, "allsports_refusals")
+    if row:
+        row.value = {"n": 0}
+    db.commit()
+    return codes
