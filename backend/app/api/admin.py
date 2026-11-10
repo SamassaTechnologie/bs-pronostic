@@ -347,6 +347,8 @@ def diagnostic_sportapi(db: Session = Depends(get_db)):
             break
         f = fx.get("fixture") or {}
         detail_keys = {"root": sorted(fx.keys()), "fixture": sorted(f.keys())}
+        out["events_sample"] = (f.get("events") or [])[:4]
+        out["fixture_sample"] = {k: f.get(k) for k in ("status", "minute", "result", "home_score", "away_score", "ht_home", "ht_away", "home_team", "away_team")}
         for k in ("lineups", "events", "statistics", "stats", "odds", "injuries"):
             v = fx.get(k, f.get(k))
             has[k] = (type(v).__name__, len(v) if hasattr(v, "__len__") else None) if v is not None else None

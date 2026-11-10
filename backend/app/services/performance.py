@@ -38,7 +38,9 @@ def settle_predictions(db: Session, now: Optional[datetime] = None) -> dict:
             p.result = "won" if outcome else "lost"
             p.settled_at = now
             counts[p.result] += 1
-        elif m.status in ("POSTPONED", "CANCELLED") and m.kickoff < now - timedelta(days=2):
+        elif (m.status in ("POSTPONED", "CANCELLED") and m.kickoff < now - timedelta(days=2)) or (
+                not m.competition.enabled and m.kickoff < now - timedelta(days=3)):
+            # reporté / annulé, ou championnat mis en pause (plus de source de résultats) : pronostic annulé
             p.result = "void"
             p.settled_at = now
             counts["void"] += 1

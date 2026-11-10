@@ -470,6 +470,7 @@ def odds_popular(db: Session, now: datetime, force: bool = False) -> Optional[di
 
 # --- Fin d'abonnement : arrêt automatique et mise en pause des championnats qui en dépendent ----------------------
 REFUSALS_BEFORE_SHUTDOWN = 3
+OTHER_FAILURES_BEFORE_SHUTDOWN = 30
 
 
 def _key_refused(msg: str) -> bool:
@@ -484,11 +485,24 @@ def note_result(db: Session, ok: bool, message: str = "") -> bool:
     row = db.get(Setting, "allsports_refusals")
     n = int((row.value or {}).get("n", 0)) if row else 0
     if ok:
-        if n:
-            row.value = {"n": 0}
+        if row and (n or (row.value or {}).get("other")):
+            row.value = {"n": 0, "other": 0}
             db.commit()
         return False
     if not _key_refused(message):
+        # Autre panne (réseau, réponse illisible…) : coupure seulement si elle dure (30 échecs d'affilée, ~5 h),
+        # pour que l'application reste autonome même si la fin d'abonnement se manifeste autrement qu'un refus.
+        if "budget" in (message or "").lower():
+            return False
+        other = int((row.value or {}).get("other", 0)) + 1 if row else 1
+        if row is None:
+            db.add(Setting(key="allsports_refusals", value={"n": 0, "other": other, "last": message[:200]}))
+        else:
+            row.value = {"n": n, "other": other, "last": message[:200]}
+        db.commit()
+        if other >= OTHER_FAILURES_BEFORE_SHUTDOWN:
+            shutdown(db, message)
+            return True
         return False
     n += 1
     if row is None:
