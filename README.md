@@ -278,3 +278,30 @@ test : `POST /api/admin/ai/test-web`.
 - **Flash « BUT ! »** sur la page Direct quand un score augmente.
 - **Page /matchs** : bandeau des 7 jours (hier → J+5), championnats repliables, grands championnats en tête.
 
+
+### État au 10 novembre 2026 : fonctionnement autonome et gratuit jusqu'à fin 2026
+Ajouts de novembre : pronostics combinés du même match (`combo_pick`), bankers du jour (jusqu'à 3, `banker`), page
+publique `/bilan`, `/statistiques` par marché, Machine SAM (`/machine`), alertes Web Push (`/compte/alertes`, clés
+VAPID sur Render), compositions officielles et graphique de domination, pages légales (`/conditions`,
+`/confidentialite`, `/jeu-responsable`), sitemap, images d'aperçu, cache des réponses (`response_cache.py`),
+matchs internationaux (compétition `INT`, `services/intl.py` : historique public GitHub martj42 + calendrier).
+
+**Décision du propriétaire (9 novembre 2026)** : rester à 0 € tant que l'application n'a pas de revenus ; priorité aux
+grands championnats ; l'Afrique est mise en pause à la fin de l'essai AllSportsAPI (17 novembre 2026).
+
+Ce qui se passe sans intervention :
+- **Fin d'AllSportsAPI** : 3 refus de clé d'affilée (ou 30 pannes d'affilée) → source coupée, championnats
+  `primary_source = "allsports"` mis en pause (rien supprimé), leurs pronostics en attente annulés après 3 jours.
+  Réactiver AllSportsAPI dans l'administration fait tout revenir (`allsports_sync.resume`).
+- **Direct** : football-data.org (Ligue des champions…) puis SportAPI.ai (gratuit, plafond 220 requêtes/jour pour
+  rester sous 7 000/mois à partir du 1er décembre 2026). Buts et cartons des grands matchs terminés via SportAPI.ai.
+- **Perdu après le 17 novembre** : championnats africains, cotes double chance / +1,5 / BTTS, compositions,
+  statistiques de match et graphique de domination. Les cotes 1X2 et +/-2,5 (football-data.co.uk) restent.
+- **Tâches planifiées Supabase** : `sam-sync` (toutes les 3 h), `sam-live` (toutes les 10 min, 7 h-23 h),
+  `sam-eveil` (toutes les 10 min, 0 h-6 h, garde Render éveillé).
+- **API-Football** : compte gratuit suspendu (règle « plusieurs comptes gratuits » de leur FAQ) ; source désactivée.
+  Si le support réactive le compte : Administration → sources → activer API-Football.
+
+À surveiller par le propriétaire (aucun code à changer) : Render reste sous 750 h gratuites/mois avec un seul
+service ; si Gemini et Groq retirent leurs modèles gratuits, l'analyse IA s'efface (les pronostics ne dépendent pas
+de l'IA) ; prochaine trêve internationale en mars 2027.
