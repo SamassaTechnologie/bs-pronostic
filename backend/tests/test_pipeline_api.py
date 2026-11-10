@@ -1143,3 +1143,17 @@ def test_international_matches(populated, monkeypatch):
     assert not intl.is_international("UEFA Nations League Women") and not intl.is_international("UEFA Champions League")
     assert not intl.is_international("Friendlies U21")
     assert intl.french("Netherlands") == "Pays-Bas"
+
+
+def test_sportapi_timeline():
+    """Chronologie SportAPI.ai : types reconnus seulement, penalty / contre son camp d'après la précision fournie."""
+    from app.services.sportapi import details_of
+    d = details_of({"events": [
+        {"minute": "9'", "team_side": "away", "event_type": "yellow_card", "extra_info": "Yellow Card", "player_name": "A"},
+        {"minute": "35'", "team_side": "home", "event_type": "goal", "extra_info": "Goal", "player_name": "B"},
+        {"minute": "50'", "team_side": "home", "event_type": "goal", "extra_info": "Penalty", "player_name": "C"},
+        {"minute": "60'", "team_side": "away", "event_type": "goal", "extra_info": "Own Goal", "player_name": "D"},
+        {"minute": "70'", "team_side": "home", "event_type": "var", "extra_info": "?", "player_name": "E"},
+        {"minute": "80'", "team_side": "home", "event_type": "goal", "extra_info": "Goal", "player_name": ""}]})
+    assert [(e["minute"], e["type"]) for e in d["events"]] == [("9", "yellow"), ("35", "goal"), ("50", "penalty"), ("60", "own_goal")]
+    assert details_of({"events": [{"event_type": "var"}]}) is None and details_of({}) is None

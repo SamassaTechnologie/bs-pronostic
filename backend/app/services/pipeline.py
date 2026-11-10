@@ -58,6 +58,13 @@ def run_pipeline(db: Session, kinds=("history", "upcoming", "enrich"), force: bo
         res_fast = complete_results(db, utcnow())
         if res_fast:
             sync.append(res_fast)
+        try:  # buts et cartons des grands matchs terminés quand AllSportsAPI n'est plus là
+            from .sportapi import final_details
+            res_tl = final_details(db, utcnow())
+            if res_tl:
+                sync.append(res_tl)
+        except Exception:
+            db.rollback()
         _state["step"] = "analyse"
         analysis = run_analysis(db)
         _state["step"] = "règlement"

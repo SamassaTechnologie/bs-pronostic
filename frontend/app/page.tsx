@@ -201,7 +201,8 @@ export default async function Home() {
         icon={IC.star} tone="bg-amber-soft text-amber"
         badge={<span className="shrink-0 rounded-md bg-amber-soft px-1.5 py-0.5 text-[11px] font-bold text-amber">{(d.popular ?? []).reduce((t, g) => t + g.n_matches, 0)} matchs</span>}>
         {(d.popular ?? []).length ? (
-          (d.popular ?? []).map((g, i) => (
+          <div className="lg:grid lg:grid-cols-2 lg:items-start lg:gap-2 lg:[&>details]:mt-0">
+          {(d.popular ?? []).map((g, i) => (
             <SubCategory key={g.code} open={i < 2}
               title={<><span className="mr-1.5" aria-hidden>{flag(g.country)}</span>{g.name}</>}
               hint={`${g.n_matches} match${g.n_matches > 1 ? "s" : ""} à venir · ${g.n_picks} pronostic${g.n_picks > 1 ? "s" : ""}`}
@@ -233,7 +234,8 @@ export default async function Home() {
                 ))}
               </ul>
             </SubCategory>
-          ))
+          ))}
+          </div>
         ) : (
           <Empty title="Pas de match des grands championnats dans les prochains jours" />
         )}

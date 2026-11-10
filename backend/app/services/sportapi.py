@@ -183,3 +183,83 @@ def live_fallback(db: Session, now: datetime, cands: list[Match]) -> dict:
     if updated:
         db.commit()
     return {"ok": error is None, "live": live, "updated": updated, "error": error}
+
+
+# --- Chronologie des matchs terminés (buts, cartons) quand AllSportsAPI n'est plus disponible ---------------------
+EVENT_TYPES = {"goal": "goal", "penalty": "penalty", "penalty_goal": "penalty", "own_goal": "own_goal",
+               "yellow_card": "yellow", "red_card": "red", "second_yellow": "second_yellow",
+               "yellow_red_card": "second_yellow"}
+
+
+def details_of(fx: dict) -> Optional[dict]:
+    """Chronologie SportAPI.ai au format de l'application ; None si aucun événement reconnu. Rien n'est déduit :
+    un type d'événement inconnu est ignoré."""
+    events = []
+    for e in fx.get("events") or []:
+        if not isinstance(e, dict):
+            continue
+        kind = EVENT_TYPES.get((e.get("event_type") or "").lower())
+        extra = (e.get("extra_info") or "").lower()
+        if kind == "goal" and "own" in extra:
+            kind = "own_goal"
+        elif kind == "goal" and "penal" in extra:
+            kind = "penalty"
+        side, player = e.get("team_side"), (e.get("player_name") or "").strip()
+        if not kind or side not in ("home", "away") or not player:
+            continue
+        events.append({"minute": str(e.get("minute") or "").replace("'", "").strip(), "type": kind, "side": side,
+                       "player": player})
+    if not events:
+        return None
+    return {"events": events[:60], "stats": [], "source": "SportAPI.ai", "final": True}
+
+
+def final_details(db: Session, now: datetime, max_details: int = 6, reserve: int = 140) -> Optional[dict]:
+    """Buts et cartons des matchs terminés depuis moins de 36 h dans les grands championnats, seulement quand
+    AllSportsAPI est coupé et qu'il reste de la marge sur le budget du jour (le direct reste prioritaire)."""
+    from ..popular import is_popular
+    from .settings_service import get_provider_flags
+    from .sync import _run
+    cfg = get_settings()
+    if not cfg.sportapi_key or (cfg.allsports_key and get_provider_flags(db).get("allsports", True)):
+        return None
+    if _used(db) >= reserve:
+        return None
+    done = db.scalars(select(Match).join(Competition, Match.competition_id == Competition.id).where(
+        Competition.enabled.is_(True), Match.status == "FINISHED", Match.kickoff >= now - timedelta(hours=36),
+        Match.kickoff <= now - timedelta(minutes=170))).unique().all()
+    todo = [m for m in done if is_popular(m.competition.code) and not (m.details or {}).get("events")]
+    if not todo:
+        return None
+
+    def work(run: SyncRun) -> tuple[int, str]:
+        n, calls = 0, 0
+        for day in sorted({m.kickoff.date().isoformat() for m in todo})[-2:]:
+            try:
+                rows = fixtures_on(db, day)
+            except SportApiError as exc:
+                return n, f"{n} chronologie(s) ; {exc}"
+            for x in rows:
+                if x.get("status") != "FT" or calls >= max_details:
+                    continue
+                m = find([t for t in todo if not (t.details or {}).get("events")], x)
+                if m is None:
+                    continue
+                try:
+                    fx = _get(db, f"/fixtures/{x['id']}").get("fixture") or {}
+                except SportApiError as exc:
+                    return n, f"{n} chronologie(s) ; {exc}"
+                calls += 1
+                d = details_of(fx)
+                if d:
+                    old = dict(m.details or {})
+                    d["lineups"] = old.get("lineups")
+                    m.details = {k: v for k, v in d.items() if v is not None}
+                    n += 1
+                else:
+                    m.details = {**(m.details or {}), "events": [], "checked": True, "source": "SportAPI.ai"} \
+                        if m.details else m.details
+            db.commit()
+        return n, f"{n} match(s) : buts et cartons ({len(todo)} en attente)"
+
+    return _run(db, NAME, "chronologie", work)
