@@ -68,10 +68,11 @@ export function MobileTabs({ signedIn }: { signedIn: boolean }) {
 
 export function Logo({ className = "h-8 w-8" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 64 64" className={className} aria-hidden>
-      <rect width="64" height="64" rx="14" fill="#13294b" />
-      <circle cx="32" cy="32" r="19" fill="none" stroke="#fff" strokeWidth="3.5" />
-      <path d="M17 39 27 30l7 6 13-14" fill="none" stroke="#12a150" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+    <svg viewBox="0 0 512 512" className={className} aria-hidden>
+      <rect width="512" height="512" rx="112" fill="#12305c" />
+      <path d="M 371 141 A 150 150 0 1 0 406 256" fill="none" stroke="#12a150" strokeWidth="34" strokeLinecap="round" />
+      <path d="M 158 318 L 226 250 L 276 292 L 372 176" fill="none" stroke="#fff" strokeWidth="34" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="384" cy="162" r="34" fill="#e8a317" />
     </svg>
   );
 }

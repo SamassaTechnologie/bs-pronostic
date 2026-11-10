@@ -1,5 +1,5 @@
 // Service worker SAM-Prédiction : coque de l'application en cache, pages en « réseau d'abord ».
-const CACHE = "sam-v1";
+const CACHE = "sam-v2";
 const OFFLINE = "/offline.html";
 
 self.addEventListener("install", (e) => {
