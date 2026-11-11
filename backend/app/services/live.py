@@ -226,7 +226,8 @@ def match_live_state(db: Session, m: Match) -> dict:
     if started:
         return {"state": "live", "label": "En cours", "home": None, "away": None, "minute": estimated_minute(m.kickoff, now),
                 "minute_estimated": True, "covered": False, "refreshed_at": refreshed, "details": m.details,
-                "note": "Score en direct non disponible pour ce championnat (source gratuite)" if not error else error}
+                "note": ("Aucune source n'indique ce match en cours : il peut avoir été reporté, ou son résultat n'est "
+                         "pas encore publié. Score en direct non disponible.") if not error else error}
     if m.status in ("POSTPONED", "CANCELLED"):
         return {"state": "postponed", "label": "Reporté" if m.status == "POSTPONED" else "Annulé", "covered": False}
     lu = (m.details or {}).get("lineups")

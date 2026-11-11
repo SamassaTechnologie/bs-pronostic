@@ -18,6 +18,16 @@ UTC = timezone.utc
 
 def settle_predictions(db: Session, now: Optional[datetime] = None) -> dict:
     now = now or utcnow()
+    # Match toujours « à venir » trois jours après son horaire : aucune source n'a donné de résultat (reporté, ou
+    # reprogrammé sous une autre date). Il n'est plus présenté comme programmé ni en cours ; un résultat qui
+    # arriverait plus tard le repasse en « terminé ».
+    stale = db.scalars(select(Match).where(Match.status.in_(("SCHEDULED", "LIVE")),
+                                           Match.kickoff < now - timedelta(days=3),
+                                           Match.kickoff > now - timedelta(days=60))).unique().all()
+    for sm in stale:
+        sm.status = "POSTPONED"
+    if stale:
+        db.commit()
     pending = db.scalars(select(Prediction).where(Prediction.result == "pending")).unique().all()
     counts = defaultdict(int)
     for p in pending:

@@ -141,7 +141,7 @@ export function LiveBoard({ tz }: { tz: string }) {
                             <span className="h-2 w-2 animate-pulse rounded-full bg-brick" aria-hidden />
                             {it.live.status}{it.live.minute ? ` ${it.live.minute}'` : ""}
                           </span>
-                        ) : <span>Score en direct non couvert</span>
+                        ) : <span>Horaire prévu, non confirmé par la source</span>
                       ) : current === "finished" ? <span className="font-semibold">Terminé</span> : null}
                     </div>
                     <div className="mt-1 grid grid-cols-[1fr_auto_1fr] items-center gap-3">

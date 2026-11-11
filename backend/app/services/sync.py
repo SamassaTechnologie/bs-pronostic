@@ -141,10 +141,15 @@ class MatchIndex:
             self.by_fixture[m.api_football_fixture_id] = m
 
     def find(self, home_id: int, away_id: int, kickoff: datetime, status: str,
-             fixture_id: Optional[int] = None) -> Optional[Match]:
+             fixture_id: Optional[int] = None, source_ref: Optional[str] = None) -> Optional[Match]:
         if fixture_id and fixture_id in self.by_fixture:
             return self.by_fixture[fixture_id]
         cands = self.by_pair.get((home_id, away_id), [])
+        if source_ref:
+            # même identifiant chez la source : c'est le même match, même si sa date a changé (match reprogrammé)
+            same = [m for m in cands if m.source_ref == source_ref and m.status != "FINISHED"]
+            if same:
+                return min(same, key=lambda m: abs(m.kickoff - kickoff))
         near = [m for m in cands if abs(m.kickoff - kickoff) <= timedelta(hours=36)]
         if not near and status == "FINISHED":  # match reprogrammé
             near = [m for m in cands if m.status != "FINISHED" and abs(m.kickoff - kickoff) <= timedelta(days=60)]
@@ -157,7 +162,7 @@ def upsert_match(db: Session, comp: Competition, rec: MatchRecord, resolver: Tea
     away = resolver.resolve(rec.away_name, comp.country, rec.source, rec.away_ext_id)
     if home.id == away.id:
         return None
-    m = index.find(home.id, away.id, rec.kickoff, rec.status, rec.fixture_ext_id)
+    m = index.find(home.id, away.id, rec.kickoff, rec.status, rec.fixture_ext_id, rec.source_ref)
     if m is None:
         m = Match(competition_id=comp.id, home_team_id=home.id, away_team_id=away.id, kickoff=rec.kickoff,
                   status=rec.status, source=rec.source, season=rec.season, source_ref=rec.source_ref)

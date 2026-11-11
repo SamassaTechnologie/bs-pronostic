@@ -156,9 +156,9 @@ export function LiveHeader({ match, initial, tz, homeStanding, awayStanding, chi
           </Link>
         </span>
         {isLive ? (
-          <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-brick px-2.5 py-0.5 font-bold text-white">
-            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" aria-hidden />
-            {live.label === "Mi-temps" ? "Mi-temps" : `En direct${live.minute && live.minute !== "Mi-temps" ? ` ${live.minute_estimated ? "≈ " : ""}${live.minute}` : ""}`}
+          <span className={`flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 font-bold text-white ${live.covered === false ? "bg-white/20" : "bg-brick"}`}>
+            {live.covered !== false && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" aria-hidden />}
+            {live.covered === false ? "Horaire prévu · non confirmé" : live.label === "Mi-temps" ? "Mi-temps" : `En direct${live.minute && live.minute !== "Mi-temps" ? ` ${live.minute_estimated ? "≈ " : ""}${live.minute}` : ""}`}
           </span>
         ) : live.state === "finished" ? (
           <span className="shrink-0 rounded-full bg-white/15 px-2.5 py-0.5 font-bold">Terminé</span>
