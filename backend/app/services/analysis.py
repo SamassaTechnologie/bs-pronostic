@@ -134,8 +134,10 @@ def run_analysis(db: Session, now: Optional[datetime] = None, publish: bool = Tr
             cup_rows, rows = cup_pool.pooled_matches(db, comp, since, now)
             table_data = [match_to_data(r) for r in cup_rows]
         else:
+            from ..models import lean_matches
             rows = db.scalars(select(Match).where(Match.competition_id == comp_id, Match.status == "FINISHED",
-                                                  Match.kickoff >= since, Match.kickoff < now)).unique().all()
+                                                  Match.kickoff >= since, Match.kickoff < now)
+                              .options(*lean_matches())).all()
             table_data = None
         data = [match_to_data(r) for r in rows]
         try:

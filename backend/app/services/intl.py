@@ -118,7 +118,7 @@ def frenchify(db: Session) -> int:
     return n
 
 
-def import_history(db: Session, now: datetime, text: Optional[str] = None) -> tuple[int, str]:
+def import_history(db: Session, now: datetime, text: Optional[str] = None, recent_only: bool = False) -> tuple[int, str]:
     """Résultats officiels des sélections depuis 2021 (au plus une fois par jour)."""
     from .sync import MatchIndex, TeamResolver
     comp = ensure_competition(db)
@@ -128,9 +128,11 @@ def import_history(db: Session, now: datetime, text: Optional[str] = None) -> tu
         text = r.text
     known = french_names()
     resolver, index = TeamResolver(db), MatchIndex(db, comp.id)
+    # après le premier import, seuls les deux derniers mois sont relus (le reste est déjà en base)
+    since = max(SINCE, (now - timedelta(days=60)).date().isoformat()) if recent_only else SINCE
     n_new = n_upd = 0
     for row in csv.DictReader(io.StringIO(text)):
-        if row["date"] < SINCE or row["home_team"] not in known or row["away_team"] not in known:
+        if row["date"] < since or row["home_team"] not in known or row["away_team"] not in known:
             continue
         if row["home_score"] in ("", "NA") or row["away_score"] in ("", "NA"):
             continue
@@ -235,7 +237,7 @@ def run(db: Session, kinds: set, now: datetime, force: bool = False) -> list[dic
         last = (memo.value or {}).get("at") if memo else None
         if force or not last or now - datetime.fromisoformat(last) >= timedelta(hours=20):
             def work(run_: SyncRun) -> tuple[int, str]:
-                res = import_history(db, now)
+                res = import_history(db, now, recent_only=bool(last))
                 m = db.get(Setting, "intl_history") or Setting(key="intl_history", value={})
                 m.value = {"at": now.isoformat()}
                 db.merge(m)

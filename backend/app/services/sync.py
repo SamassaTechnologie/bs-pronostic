@@ -15,7 +15,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import ApiUsage, Competition, Injury, Match, OddsQuote, SyncRun, Team, TeamAlias, utcnow
+from ..models import ApiUsage, Competition, Injury, Match, OddsQuote, SyncRun, Team, TeamAlias, lean_matches, utcnow
 from ..providers.api_football import ApiFootball
 from ..providers.base import MatchRecord, OddsRecord, ProviderError
 from ..providers.football_data_co_uk import FootballDataCoUk, current_season_start, internal_maps
@@ -129,10 +129,24 @@ class TeamResolver:
 class MatchIndex:
     """Index en mémoire des matchs d'une compétition (évite une requête par ligne)."""
 
+    WINDOW_DAYS = 420  # saison en cours et précédente ; les matchs plus anciens ne sont chargés qu'au besoin
+
     def __init__(self, db: Session, competition_id: int):
         self.by_pair: dict = defaultdict(list)
         self.by_fixture: dict = {}
-        for m in db.scalars(select(Match).where(Match.competition_id == competition_id)).unique().all():
+        self._db, self._cid, self._full = db, competition_id, False
+        self.since = utcnow() - timedelta(days=self.WINDOW_DAYS)
+        for m in db.scalars(select(Match).where(Match.competition_id == competition_id, Match.kickoff >= self.since)
+                            .options(*lean_matches())).all():
+            self.add(m)
+
+    def _need(self, kickoff: datetime) -> None:
+        """Un match plus ancien que la fenêtre est demandé (import d'historique) : on charge le reste, une fois."""
+        if self._full or kickoff - timedelta(days=61) >= self.since:
+            return
+        self._full = True
+        for m in self._db.scalars(select(Match).where(Match.competition_id == self._cid, Match.kickoff < self.since)
+                                  .options(*lean_matches())).all():
             self.add(m)
 
     def add(self, m: Match) -> None:
@@ -144,6 +158,7 @@ class MatchIndex:
              fixture_id: Optional[int] = None, source_ref: Optional[str] = None) -> Optional[Match]:
         if fixture_id and fixture_id in self.by_fixture:
             return self.by_fixture[fixture_id]
+        self._need(kickoff)
         cands = self.by_pair.get((home_id, away_id), [])
         if source_ref:
             # même identifiant chez la source : c'est le même match, même si sa date a changé (match reprogrammé)

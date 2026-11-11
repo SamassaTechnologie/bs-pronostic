@@ -317,3 +317,10 @@ class PushLog(Base):
     kind: Mapped[str] = mapped_column(String(20))
     ref: Mapped[str] = mapped_column(String(40))
     sent_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+
+
+def lean_matches():
+    """Options de chargement « léger » des matchs : sans jointures (compétition, équipes) ni chronologie.
+    Indispensable pour les lectures en masse : la base facture chaque octet envoyé au serveur d'analyse."""
+    from sqlalchemy.orm import defer, lazyload
+    return (lazyload(Match.competition), lazyload(Match.home_team), lazyload(Match.away_team), defer(Match.details))
