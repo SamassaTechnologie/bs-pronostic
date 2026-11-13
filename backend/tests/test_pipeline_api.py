@@ -1157,3 +1157,35 @@ def test_sportapi_timeline():
         {"minute": "80'", "team_side": "home", "event_type": "goal", "extra_info": "Goal", "player_name": ""}]})
     assert [(e["minute"], e["type"]) for e in d["events"]] == [("9", "yellow"), ("35", "goal"), ("50", "penalty"), ("60", "own_goal")]
     assert details_of({"events": [{"event_type": "var"}]}) is None and details_of({}) is None
+
+
+def test_machine_more_events(populated, client, monkeypatch):
+    """Machine SAM : familles d'événements, combinés validés du même match, « moins de » corners / cartons déduits
+    du « plus de » de la même ligne (probabilités complémentaires)."""
+    import app.api.catalog as cat
+    from app.engine.extended_picks import validated
+    with SessionLocal() as db:
+        ms = db.scalars(select(Match).join(Analysis, Analysis.match_id == Match.id).where(Match.kickoff >= NOW)).unique().all()
+        saved = {m.id: m.status for m in ms}
+        for m in ms:
+            m.status = "SCHEDULED"
+        db.commit()
+    monkeypatch.setattr(cat, "_now", lambda: NOW)
+    groups = client.get("/api/machine/options").json()["groups"]
+    assert [g["key"] for g in groups] == ["resultat", "buts", "mitemps", "combos", "corners", "cartons"]
+    combos = [e["key"] for g in groups if g["key"] == "combos" for e in g["events"]]
+    assert combos and set(combos) <= set(validated()) and "e:1X&TO2.5" in combos
+    base = {"days": 3, "n_matches": 20, "min_odds": 1.01, "max_odds": 50, "min_probability": 0.3, "min_confidence": 0}
+    r = client.post("/api/machine", json={**base, "events": ["e:1X&TO2.5", "e:BY&TO2.5", "e:12&BY"]}).json()
+    assert r["count"] >= 1 and all(s["market_key"].startswith("e:") and s["playable"] for s in r["selections"])
+    u = client.post("/api/machine", json={**base, "events": ["C_U9.5"]}).json()
+    o = client.post("/api/machine", json={**base, "events": ["C_O9.5"], "min_probability": 0.3}).json()
+    over = {s["match"]["id"]: s["probability"] for s in o["selections"]}
+    for s in u["selections"]:
+        assert s["playable"] is False and not s["bookmaker_odds"]
+        if s["match"]["id"] in over:
+            assert abs(s["probability"] + over[s["match"]["id"]] - 1) < 1e-3
+    with SessionLocal() as db:
+        for m in db.scalars(select(Match).where(Match.id.in_(list(saved)))).all():
+            m.status = saved[m.id]
+        db.commit()

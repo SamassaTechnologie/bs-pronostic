@@ -23,16 +23,63 @@ from ..models import Analysis, Competition, Match
 from ..popular import is_popular
 from .analysis import match_summary, match_to_data
 
-# Événements proposés (clé SAM → libellé court)
-EVENTS: dict[str, str] = {
-    "1": "Victoire domicile", "X": "Match nul", "2": "Victoire extérieur",
-    "1X": "Double chance 1X", "X2": "Double chance X2", "12": "Double chance 12",
-    "O1.5": "Plus de 1,5 but", "O2.5": "Plus de 2,5 buts", "O3.5": "Plus de 3,5 buts",
-    "U2.5": "Moins de 2,5 buts", "U3.5": "Moins de 3,5 buts",
-    "BTTS_Y": "Les deux marquent : oui", "BTTS_N": "Les deux marquent : non",
-    "HT_O0.5": "But en 1re mi-temps", "HT_U1.5": "Moins de 1,5 but en 1re mi-temps",
-    "C_O8.5": "Plus de 8,5 corners", "C_O9.5": "Plus de 9,5 corners", "K_O3.5": "Plus de 3,5 cartons",
-}
+# Événements proposés, par famille (clé SAM → libellé court)
+_RES = (("1", "Domicile gagne"), ("2", "Extérieur gagne"), ("1X", "1X"), ("X2", "X2"), ("12", "12"))
+_ADD = (("BY", "les deux marquent"), ("TO2.5", "plus de 2,5 buts"), ("TU2.5", "moins de 2,5 buts"))
+EVENT_GROUPS: list[tuple[str, str, list[tuple[str, str]]]] = [
+    ("resultat", "Résultat", [("1", "Victoire domicile"), ("X", "Match nul"), ("2", "Victoire extérieur"),
+                              ("1X", "Double chance 1X"), ("X2", "Double chance X2"), ("12", "Double chance 12")]),
+    ("buts", "Buts", [("O1.5", "Plus de 1,5 but"), ("O2.5", "Plus de 2,5 buts"), ("O3.5", "Plus de 3,5 buts"),
+                      ("U2.5", "Moins de 2,5 buts"), ("U3.5", "Moins de 3,5 buts"),
+                      ("BTTS_Y", "Les deux marquent : oui"), ("BTTS_N", "Les deux marquent : non")]),
+    ("mitemps", "Mi-temps", [("HT_O0.5", "But en 1re mi-temps"), ("HT_U1.5", "Moins de 1,5 but en 1re mi-temps"),
+                             ("HT_1", "Domicile en tête à la pause"), ("HT_X", "Égalité à la pause"),
+                             ("HT_2", "Extérieur en tête à la pause")]),
+    ("combos", "Combinés (même match)",
+     [(f"e:{r}&{a}", f"{rl} + {al}") for r, rl in _RES for a, al in _ADD]
+     + [("e:BY&TO2.5", "Les deux marquent + plus de 2,5 buts"), ("e:BY&TU3.5", "Les deux marquent + moins de 3,5 buts"),
+        ("e:BN&TU2.5", "Un seul marque au plus + moins de 2,5 buts"),
+        ("e:BN&TU3.5", "Un seul marque au plus + moins de 3,5 buts")]),
+    ("corners", "Corners", [("C_O7.5", "Plus de 7,5 corners"), ("C_O8.5", "Plus de 8,5 corners"),
+                            ("C_O9.5", "Plus de 9,5 corners"), ("C_U8.5", "Moins de 8,5 corners"),
+                            ("C_U9.5", "Moins de 9,5 corners"), ("C_U10.5", "Moins de 10,5 corners")]),
+    ("cartons", "Cartons", [("K_O2.5", "Plus de 2,5 cartons"), ("K_O3.5", "Plus de 3,5 cartons"),
+                            ("K_O4.5", "Plus de 4,5 cartons"), ("K_U3.5", "Moins de 3,5 cartons"),
+                            ("K_U4.5", "Moins de 4,5 cartons")]),
+]
+EVENTS: dict[str, str] = {k: label for _, _, items in EVENT_GROUPS for k, label in items}
+# « Moins de » déduits du marché « plus de » calibré de la même ligne (événements strictement complémentaires)
+DERIVED = {"C_U8.5": "C_O8.5", "C_U9.5": "C_O9.5", "K_U3.5": "K_O3.5", "K_U4.5": "K_O4.5"}
+
+
+def event_groups() -> list[dict]:
+    """Familles d'événements réellement proposables : un combiné non validé par le backtest est retiré."""
+    from ..engine.extended_picks import validated
+    ok = validated()
+    return [{"key": g, "label": gl, "events": [{"key": k, "label": lab} for k, lab in items
+                                                if not k.startswith("e:") or k in ok]}
+            for g, gl, items in EVENT_GROUPS]
+
+
+def _candidates(payload: dict, events: list[str], settings: dict) -> list[dict]:
+    """Marchés du match correspondant aux événements choisis (principaux, « moins de » déduits, combinés)."""
+    mks = {x["key"]: x for x in payload.get("markets", []) if x.get("available")}
+    out = [mks[k] for k in events if k in mks]
+    for under, over in DERIVED.items():
+        o = mks.get(over)
+        if under in events and under not in mks and o is not None:
+            p = round(1.0 - o["probability"], 4)
+            if 0 < p < 1:
+                out.append({"key": under, "label": EVENTS[under], "probability": p, "confidence": o["confidence"],
+                            "odds": None, "fair_odds": round(1 / p, 3), "bookmaker": None, "derived": True})
+    wanted = {k for k in events if k.startswith("e:") and k not in mks}
+    if wanted:
+        from ..engine.extended_picks import combo_markets
+        wide = {**settings, "combo_min_probability": 0.01, "combo_min_odds": 1.0, "combo_max_odds": 1000.0}
+        out.extend(c for c in combo_markets(payload, wide) if c["key"] in wanted)
+    return out
+
+
 MIN_SAMPLE = 5
 
 
@@ -63,22 +110,24 @@ def generate(db: Session, now: datetime, *, events: list[str], days: int = 1, co
     analyses = [a for a in db.scalars(q.order_by(Match.kickoff)).unique()
                 if (a.payload or {}).get("status") == "ok" and not (a.payload or {}).get("avoid_reasons")
                 and (not popular_only or is_popular(a.match.competition.code))]
+    from .settings_service import get_selection_settings
+    settings = dict(get_selection_settings(db))
     stats_needed = any(v is not None for v in (last10_pct, venue_pct, h2h_pct, min_avg_scored, max_avg_conceded))
     history = None
     if stats_needed and analyses:
         team_ids = {a.match.home_team_id for a in analyses} | {a.match.away_team_id for a in analyses}
+        from ..models import lean_matches
         past = db.scalars(select(Match).where(
             Match.status == "FINISHED", Match.kickoff >= now - timedelta(days=500),
-            or_(Match.home_team_id.in_(team_ids), Match.away_team_id.in_(team_ids)))).unique().all()
+            or_(Match.home_team_id.in_(team_ids), Match.away_team_id.in_(team_ids)))
+            .options(*lean_matches())).all()
         history = TeamHistory([match_to_data(m) for m in past])
 
     cands, rejected = [], {"probabilite": 0, "cote": 0, "statistiques": 0, "donnees": 0}
     for a in analyses:
         p, m = a.payload, a.match
         best = None
-        for mk in p.get("markets", []):
-            if mk["key"] not in events or not mk.get("available"):
-                continue
+        for mk in _candidates(p, events, settings):
             if mk["probability"] < min_probability or mk["confidence"]["score"] < min_confidence:
                 rejected["probabilite"] += 1
                 continue
@@ -132,7 +181,8 @@ def generate(db: Session, now: datetime, *, events: list[str], days: int = 1, co
                     "event": EVENTS[mk["key"]], "probability": mk["probability"],
                     "confidence": mk["confidence"]["score"], "odds": round(odds, 2), "bookmaker_odds": real,
                     "bookmaker": mk.get("bookmaker") if real else None, "fair_odds": mk.get("fair_odds"),
-                    "is_pick": mk["key"] in (p.get("picks") or []), "facts": facts}
+                    "is_pick": mk["key"] in (p.get("picks") or []), "facts": facts,
+                    "playable": not mk.get("derived")}
             if best is None or (cand["probability"], cand["odds"]) > (best["probability"], best["odds"]):
                 best = cand
         if best:

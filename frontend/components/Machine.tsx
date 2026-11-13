@@ -8,14 +8,15 @@ import { replaceCoupon } from "@/lib/coupon";
 import type { MatchSummary } from "@/lib/types";
 
 type Comp = { code: string; name: string; country: string; popular: boolean };
-type Opts = { events: { key: string; label: string }[]; competitions: Comp[] };
+type Ev = { key: string; label: string };
+type Opts = { events: Ev[]; groups?: { key: string; label: string; events: Ev[] }[]; competitions: Comp[] };
 type Facts = {
   last10?: { home: number | null; away: number | null; n_home: number; n_away: number };
   venue?: { home: number | null; away: number | null; n_home: number; n_away: number };
   h2h?: { rate: number | null; n: number };
   goals5?: { home_scored: number | null; away_scored: number | null; home_conceded: number | null; away_conceded: number | null };
 };
-type Sel = { match: MatchSummary; market_key: string; label: string; event: string; probability: number; confidence: number; odds: number; bookmaker_odds: boolean; bookmaker: string | null; is_pick: boolean; facts: Facts };
+type Sel = { match: MatchSummary; market_key: string; label: string; event: string; probability: number; confidence: number; odds: number; bookmaker_odds: boolean; bookmaker: string | null; is_pick: boolean; facts: Facts; playable?: boolean };
 type Res = { selections: Sel[]; count: number; candidates: number; matches_scanned: number; total_odds: number | null; probability: number | null; all_bookmaker_odds: boolean; rejected: Record<string, number>; target_reached: boolean | null };
 
 type F = {
@@ -57,6 +58,23 @@ function PctSelect({ value, onChange }: { value: number | null; onChange: (v: nu
     <select value={value ?? ""} onChange={(e) => onChange(e.target.value ? Number(e.target.value) : null)} className={inputCls}>
       {PCTS.map((p) => <option key={String(p)} value={p ?? ""}>{p === null ? "Aucun" : `≥ ${Math.round(p * 100)} %`}</option>)}
     </select>
+  );
+}
+
+/** Étape pliable : le résumé des choix reste visible quand elle est fermée. */
+function Step({ n, title, summary, open = false, children }: { n: number; title: string; summary: string; open?: boolean; children: React.ReactNode }) {
+  return (
+    <details open={open} className="group overflow-hidden rounded-xl border border-line bg-white">
+      <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3 [&::-webkit-details-marker]:hidden">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-night text-[13px] font-bold text-white">{n}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14.5px] font-bold text-night">{title}</span>
+          <span className="block truncate text-[12px] text-steel">{summary}</span>
+        </span>
+        <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 text-steel transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="M6 9l6 6 6-6" /></svg>
+      </summary>
+      <div className="border-t border-line px-4 pb-4 pt-3">{children}</div>
+    </details>
   );
 }
 
@@ -109,11 +127,15 @@ export function Machine({ tz }: { tz: string }) {
 
   function play() {
     if (!res?.selections.length) return;
-    replaceCoupon(res.selections.map((s) => ({ match_id: s.match.id, market_key: s.market_key, label: s.label, match: `${s.match.home.name} – ${s.match.away.name}`, odds: s.odds })));
+    replaceCoupon(res.selections.filter((s) => s.playable !== false).map((s) => ({ match_id: s.match.id, market_key: s.market_key, label: s.label, match: `${s.match.home.name} – ${s.match.away.name}`, odds: s.odds })));
     router.push("/jouer/coupon");
   }
 
   const comps = opts?.competitions ?? [];
+  const groups = opts?.groups ?? (opts ? [{ key: "tous", label: "Événements", events: opts.events }] : []);
+  const labelOf = (k: string) => opts?.events.find((e) => e.key === k)?.label ?? k;
+  const nStats = [f.last10_pct, f.venue_pct, f.h2h_pct, f.min_avg_scored, f.max_avg_conceded].filter((v) => v !== null).length;
+  const unplayable = res?.selections.filter((x) => x.playable === false).length ?? 0;
   const shown = showComps ? comps : comps.filter((c) => c.popular);
 
   return (
@@ -130,18 +152,35 @@ export function Machine({ tz }: { tz: string }) {
         </div>
       )}
 
-      <section className="rounded-xl border border-line bg-white p-4">
-        <h2 className="text-[14px] font-bold">1. Événements</h2>
+      <Step n={1} title="Événements" open summary={f.events.length ? `${f.events.length} choisi${f.events.length > 1 ? "s" : ""} : ${f.events.map(labelOf).slice(0, 3).join(", ")}${f.events.length > 3 ? "…" : ""}` : "Aucun événement choisi"}>
         <p className="mb-2 text-[12px] text-steel">Un seul pronostic par match : le plus probable parmi ceux choisis.</p>
-        <div className="flex flex-wrap gap-1.5">
-          {(opts?.events ?? []).map((e) => (
-            <Chip key={e.key} on={f.events.includes(e.key)} onClick={() => set("events", f.events.includes(e.key) ? f.events.filter((x) => x !== e.key) : [...f.events, e.key])}>{e.label}</Chip>
-          ))}
+        <div className="space-y-1.5">
+          {groups.map((g, gi) => {
+            const n = g.events.filter((e) => f.events.includes(e.key)).length;
+            return (
+              <details key={g.key} open={gi === 0} className="group/ev overflow-hidden rounded-lg border border-line">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-2 bg-mist/60 px-3 py-2 [&::-webkit-details-marker]:hidden">
+                  <span className="text-[13.5px] font-bold text-night">{g.label}</span>
+                  <span className="flex items-center gap-2">
+                    {n > 0 && <span className="rounded-full bg-pitch px-2 py-0.5 text-[11px] font-bold text-white">{n}</span>}
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 text-steel transition-transform group-open/ev:rotate-180" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="M6 9l6 6 6-6" /></svg>
+                  </span>
+                </summary>
+                <div className="flex flex-wrap gap-1.5 px-3 py-2.5">
+                  {g.events.map((e) => (
+                    <Chip key={e.key} on={f.events.includes(e.key)} onClick={() => set("events", f.events.includes(e.key) ? f.events.filter((x) => x !== e.key) : [...f.events, e.key])}>{e.label}</Chip>
+                  ))}
+                  {g.key === "combos" && <p className="w-full text-[11.5px] text-steel">Deux conditions sur le même match, toutes deux nécessaires. Probabilité calculée sur le modèle de buts, cote juste SAM.</p>}
+                  {(g.key === "corners" || g.key === "cartons") && <p className="w-full text-[11.5px] text-steel">Disponibles seulement dans les championnats où corners et cartons sont relevés.</p>}
+                </div>
+              </details>
+            );
+          })}
         </div>
-      </section>
+        {f.events.length > 0 && <button type="button" onClick={() => set("events", [])} className="mt-2 text-[12.5px] font-bold text-sky">Tout décocher</button>}
+      </Step>
 
-      <section className="rounded-xl border border-line bg-white p-4">
-        <h2 className="mb-2 text-[14px] font-bold">2. Matchs</h2>
+      <Step n={2} title="Matchs" summary={`${f.days === 1 ? "Aujourd'hui" : f.days === 2 ? "48 h" : "3 jours"} · ${f.popular_only ? "grands championnats" : f.competitions.length ? `${f.competitions.length} championnat${f.competitions.length > 1 ? "s" : ""}` : "tous les championnats"} · ${f.n_matches} match${f.n_matches > 1 ? "s" : ""}`}>
         <div className="grid grid-cols-3 gap-1 rounded-lg bg-mist p-1" role="group" aria-label="Période">
           {[[1, "Aujourd'hui"], [2, "48 h"], [3, "3 jours"]].map(([d, l]) => (
             <button key={d} type="button" onClick={() => set("days", d as number)} className={`rounded-md py-1.5 text-[13px] font-bold ${f.days === d ? "bg-white text-night shadow-sm" : "text-steel"}`}>{l}</button>
@@ -174,10 +213,9 @@ export function Machine({ tz }: { tz: string }) {
             </select>
           </Field>
         </div>
-      </section>
+      </Step>
 
-      <section className="rounded-xl border border-line bg-white p-4">
-        <h2 className="mb-2 text-[14px] font-bold">3. Cotes et fiabilité</h2>
+      <Step n={3} title="Cotes et fiabilité" summary={`Cote ${String(f.min_odds).replace(".", ",")} à ${String(f.max_odds).replace(".", ",")}${f.target_odds ? ` · total visé ${String(f.target_odds).replace(".", ",")}` : ""} · probabilité ≥ ${Math.round(f.min_probability * 100)} % · confiance ≥ ${f.min_confidence}`}>
         <div className="grid grid-cols-2 items-end gap-2.5">
           <Field label="Cote min. par match"><input type="number" step={0.05} min={1.01} value={f.min_odds} onChange={(e) => set("min_odds", Number(e.target.value))} className={inputCls} inputMode="decimal" /></Field>
           <Field label="Cote max. par match"><input type="number" step={0.05} min={1.01} value={f.max_odds} onChange={(e) => set("max_odds", Number(e.target.value))} className={inputCls} inputMode="decimal" /></Field>
@@ -189,14 +227,10 @@ export function Machine({ tz }: { tz: string }) {
             <input type="range" min={0} max={90} step={5} value={f.min_confidence} onChange={(e) => set("min_confidence", Number(e.target.value))} className="mt-2 w-full accent-[#0b1d3a]" />
           </Field>
         </div>
-      </section>
+      </Step>
 
-      <details className="group rounded-xl border border-line bg-white">
-        <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 [&::-webkit-details-marker]:hidden">
-          <span><span className="block text-[14px] font-bold">4. Filtre statistique (option)</span><span className="block text-[12px] text-steel">Sur les vrais matchs joués par les deux équipes</span></span>
-          <svg viewBox="0 0 24 24" className="h-4 w-4 text-steel transition-transform group-open:rotate-180" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><path d="M6 9l6 6 6-6" /></svg>
-        </summary>
-        <div className="grid grid-cols-2 items-end gap-2.5 border-t border-line px-4 pb-4 pt-3">
+      <Step n={4} title="Filtre statistique (option)" summary={nStats ? `${nStats} critère${nStats > 1 ? "s" : ""} actif${nStats > 1 ? "s" : ""}, sur les vrais matchs joués` : "Aucun critère · sur les vrais matchs joués par les deux équipes"}>
+        <div className="grid grid-cols-2 items-end gap-2.5">
           <Field label="Événement, 10 derniers matchs (chaque équipe)"><PctSelect value={f.last10_pct} onChange={(v) => set("last10_pct", v)} /></Field>
           <Field label="Domicile à domicile, extérieur à l'extérieur"><PctSelect value={f.venue_pct} onChange={(v) => set("venue_pct", v)} /></Field>
           <Field label="Confrontations directes (5 dernières)"><PctSelect value={f.h2h_pct} onChange={(v) => set("h2h_pct", v)} /></Field>
@@ -208,7 +242,7 @@ export function Machine({ tz }: { tz: string }) {
           </Field>
           <p className="col-span-2 text-[11.5px] text-steel">Une équipe avec moins de 5 matchs connus est écartée (données insuffisantes), jamais estimée.</p>
         </div>
-      </details>
+      </Step>
 
       <div className="grid grid-cols-[1fr_auto_auto] gap-2">
         <button type="button" onClick={run} disabled={busy || !f.events.length} className="rounded-xl bg-pitch py-3.5 text-[15px] font-bold text-white disabled:opacity-50">
@@ -258,7 +292,8 @@ export function Machine({ tz }: { tz: string }) {
                   </li>
                 ))}
               </ul>
-              <button type="button" onClick={play} className="mt-2 w-full rounded-xl bg-night py-3 text-[14.5px] font-bold text-white">Jouer ce coupon en jetons</button>
+              {res.count > unplayable && <button type="button" onClick={play} className="mt-2 w-full rounded-xl bg-night py-3 text-[14.5px] font-bold text-white">Jouer ce coupon en jetons</button>}
+              {unplayable > 0 && <p className="mt-1.5 text-[11.5px] text-steel">{unplayable} sélection{unplayable > 1 ? "s" : ""} « moins de corners / cartons » : pronostic affiché, mais non disponible dans la section Jouer.</p>}
             </>
           ) : (
             <div className="rounded-xl border border-dashed border-line bg-white/70 p-4 text-center text-[13.5px] text-steel">

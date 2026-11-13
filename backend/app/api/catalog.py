@@ -478,7 +478,7 @@ def stats_market(market: str, competition: Optional[str] = None, min_probability
 
 # --- Machine SAM : générateur de pronostics à critères ------------------------------------------------------------
 class MachineIn(BaseModel):
-    events: list[str] = Field(default_factory=lambda: ["O1.5", "1X", "X2"], max_length=20)
+    events: list[str] = Field(default_factory=lambda: ["O1.5", "1X", "X2"], max_length=60)
     days: int = Field(1, ge=1, le=3)
     competitions: list[str] = Field(default_factory=list, max_length=40)
     popular_only: bool = False
@@ -501,7 +501,8 @@ def machine_options(db: Session = Depends(get_db)):
     from ..popular import rank
     from ..services.machine import EVENTS
     comps = db.scalars(select(Competition).where(Competition.enabled.is_(True))).all()
-    return {"events": [{"key": k, "label": v} for k, v in EVENTS.items()],
+    from ..services.machine import event_groups
+    return {"events": [{"key": k, "label": v} for k, v in EVENTS.items()], "groups": event_groups(),
             "competitions": sorted((comp_row(c) for c in comps), key=lambda c: (rank(c["code"]), c["name"]))}
 
 
