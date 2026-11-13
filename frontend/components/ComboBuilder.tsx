@@ -82,6 +82,8 @@ type Equiv = { legs: number; leg_odds: number; total_odds: number; probability: 
 function TargetCombos({ tz }: { tz: string }) {
   const [target, setTarget] = useState(2);
   const [maxLegs, setMaxLegs] = useState(3);
+  const [hours, setHours] = useState(48);
+  const [conf, setConf] = useState(60);
   const [res, setRes] = useState<{ combos: Combo[]; message: string | null; comparison: { short: Equiv; long: Equiv } } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -90,7 +92,7 @@ function TargetCombos({ tz }: { tz: string }) {
     setBusy(true);
     setErr(null);
     try {
-      const r = await fetch("/api/proxy/combos/target", { method: "POST", body: JSON.stringify({ target, max_legs: maxLegs }) });
+      const r = await fetch("/api/proxy/combos/target", { method: "POST", body: JSON.stringify({ target, max_legs: maxLegs, hours, min_confidence: conf }) });
       const d = await r.json().catch(() => ({ detail: "Service momentanément indisponible, réessayez dans un instant." }));
       if (!r.ok) throw new Error(d.detail || "Erreur");
       setRes(d);
@@ -103,7 +105,7 @@ function TargetCombos({ tz }: { tz: string }) {
 
   const cmp = res?.comparison;
   return (
-    <section>
+    <section id="objectif" className="scroll-mt-20">
       <h2 className="mb-1 px-1 font-display text-lg font-bold">Objectif de cote</h2>
       <p className="mb-3 px-1 text-sm text-steel">
         Atteindre la cote voulue avec 2 ou 3 matchs solides plutôt qu&apos;avec 8 à 10 sélections à 1,10.
@@ -111,8 +113,8 @@ function TargetCombos({ tz }: { tz: string }) {
       <div className="space-y-4 rounded-xl border border-line bg-white p-4">
         <div>
           <div className="mb-1.5 text-xs text-steel">Cote totale visée</div>
-          <div className="grid grid-cols-4 gap-1.5" role="radiogroup">
-            {[1.5, 2, 2.5, 3].map((t) => (
+          <div className="grid grid-cols-6 gap-1.5" role="radiogroup">
+            {[1.5, 2, 2.5, 3, 4, 5].map((t) => (
               <button key={t} type="button" role="radio" aria-checked={target === t} onClick={() => setTarget(t)}
                 className={`rounded-lg py-2 text-sm font-bold ${target === t ? "bg-night text-white" : "bg-mist text-night"}`}>
                 {String(t).replace(".", ",")}
@@ -131,11 +133,35 @@ function TargetCombos({ tz }: { tz: string }) {
             ))}
           </div>
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <div className="mb-1.5 text-xs text-steel">Période</div>
+            <div className="grid grid-cols-3 gap-1" role="radiogroup">
+              {[24, 48, 72].map((h) => (
+                <button key={h} type="button" role="radio" aria-checked={hours === h} onClick={() => setHours(h)}
+                  className={`rounded-lg py-2 text-[13px] font-bold ${hours === h ? "bg-night text-white" : "bg-mist text-night"}`}>
+                  {h} h
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="mb-1.5 text-xs text-steel">Confiance min.</div>
+            <div className="grid grid-cols-3 gap-1" role="radiogroup">
+              {[60, 70, 80].map((c) => (
+                <button key={c} type="button" role="radio" aria-checked={conf === c} onClick={() => setConf(c)}
+                  className={`rounded-lg py-2 text-[13px] font-bold ${conf === c ? "bg-night text-white" : "bg-mist text-night"}`}>
+                  {c}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
         <button type="button" onClick={run} disabled={busy} className="w-full rounded-lg bg-pitch py-3 text-sm font-bold text-white disabled:opacity-60">
           {busy ? "Calcul en cours…" : `Trouver un combiné à cote ${String(target).replace(".", ",")}`}
         </button>
         <p className="text-xs text-steel">
-          Matchs des 48 prochaines heures, une sélection par match, confiance d&apos;au moins 60/100, matchs à éviter exclus.
+          Matchs des {hours} prochaines heures, une sélection par match, confiance d&apos;au moins {conf}/100, matchs à éviter exclus.
           Les propositions sont classées par chance de passer.
         </p>
       </div>
@@ -228,8 +254,9 @@ export function ComboBuilder({ tz }: { tz: string }) {
   return (
     <div className="space-y-8">
       <TargetCombos tz={tz} />
-      <section>
-        <h2 className="mb-3 px-1 font-display text-lg font-bold">Génération automatique</h2>
+      <section id="auto" className="scroll-mt-20">
+        <h2 className="mb-1 px-1 font-display text-lg font-bold">Génération automatique</h2>
+        <p className="mb-3 px-1 text-sm text-steel">Vous fixez le nombre de matchs, le moteur choisit les sélections les plus sûres.</p>
         <div className="space-y-4 rounded-xl border border-line bg-white p-4">
           <div>
             <div className="mb-1.5 text-xs text-steel">Nombre de matchs</div>
@@ -274,7 +301,7 @@ export function ComboBuilder({ tz }: { tz: string }) {
         )}
       </section>
 
-      <section>
+      <section id="surmesure" className="scroll-mt-20">
         <h2 className="mb-1 px-1 font-display text-lg font-bold">Sélection personnalisée</h2>
         <p className="mb-3 px-1 text-sm text-steel">
           Choisissez vos sélections : deux marchés d&apos;un même match sont calculés ensemble sur la matrice des scores, ou refusés si

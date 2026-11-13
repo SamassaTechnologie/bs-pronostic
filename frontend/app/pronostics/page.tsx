@@ -58,7 +58,7 @@ export default async function Pronostics({ searchParams }: { searchParams: Promi
   const th = m ? [m.settings.tier_c, m.settings.tier_b, m.settings.tier_a] : undefined;
   const countries = m ? [...new Set(m.competitions.map((c) => c.country))].sort() : [];
   const families = m ? [...new Map(m.markets.map((x) => [x.family, x.family_label])).entries()] : [];
-  const activeFilters = Object.keys(sp).filter((k) => one(sp, k) && !["sort", "jour", "vue"].includes(k)).length;
+  const activeFilters = Object.keys(sp).filter((k) => one(sp, k) && !["sort", "jour", "vue", "best", "cote"].includes(k)).length;
 
   return (
     <>
@@ -68,55 +68,76 @@ export default async function Pronostics({ searchParams }: { searchParams: Promi
           <p className="text-sm text-steel">
             {best
               ? "Une sélection par match : probabilité, confiance et valeur combinées."
-              : "Sélections retenues par le moteur, classées par championnat. Touchez un match pour l'analyse complète."}
+              : cote
+                ? "Pronostics dont la cote du bookmaker dépasse la cote juste calculée par le moteur."
+                : "Sélections retenues par le moteur. Touchez un match pour l'analyse complète."}
           </p>
         </div>
       </div>
 
-      <div className="mb-4 flex flex-wrap gap-2">
-        <Link href="/pronostics?best=1" className={`rounded-lg px-4 py-2.5 text-sm font-bold ${best ? "bg-pitch text-white" : "bg-night text-white"}`}>
-          Trouver les meilleures opportunités
-        </Link>
-        <Link href={cote ? "/pronostics" : "/pronostics?cote=1"} className={`rounded-lg px-4 py-2.5 text-sm font-bold ${cote ? "bg-amber text-white" : "border border-line bg-white text-night"}`}>
-          {cote ? "Pronostics à cote ✓" : "Pronostics à cote"}
-        </Link>
-        <Link href="/combines" className="rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-bold text-night">
-          Générateur de combinés
-        </Link>
-        {(best || activeFilters > 0) && (
-          <Link href="/pronostics" className="rounded-lg border border-line bg-white px-4 py-2.5 text-sm font-semibold text-night">
-            Réinitialiser
+      <nav className="mb-4 grid grid-cols-4 gap-1.5" aria-label="Raccourcis">
+        {([
+          ["/pronostics?best=1", "Meilleures", "opportunités", best, "M12 3l2.6 5.6 6.1.7-4.5 4.2 1.2 6L12 16.6 6.6 19.5l1.2-6L3.3 9.3l6.1-.7z"],
+          [cote ? "/pronostics" : "/pronostics?cote=1", "Pronostics", "à cote", cote, "M4 18l5-6 4 3 7-9M15 6h5v5"],
+          ["/combines", "Combinés", "2 à 5 matchs", false, "M5 6h14M5 12h14M5 18h9"],
+          ["/machine", "Machine", "SAM", false, "M12 4v3M5 10h14v9H5zM9 14h.01M15 14h.01M9 17h6"],
+        ] as [string, string, string, boolean, string][]).map(([href, l1, l2, on, d]) => (
+          <Link key={href + l1} href={href} aria-current={on ? "page" : undefined}
+            className={`flex flex-col items-center gap-1 rounded-xl px-1 py-2.5 text-center ${on ? "bg-pitch text-white" : "border border-line bg-white text-night"}`}>
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={d} /></svg>
+            <span className="text-[11.5px] font-bold leading-tight">{l1}<br /><span className={`font-semibold ${on ? "text-white/85" : "text-steel"}`}>{l2}</span></span>
           </Link>
-        )}
-      </div>
+        ))}
+      </nav>
 
-      {!best && (
-        <div className="mb-3 space-y-2">
-          <div className="scroll-x -mx-3.5 flex gap-1.5 px-3.5" role="tablist" aria-label="Jour">
-            {dayTabs.map(([k, label]) => (
-              <Link key={k || "all"} href={keep({ jour: k })} role="tab" aria-selected={day === k} scroll={false}
-                className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${day === k ? "bg-night text-white" : "bg-white text-night"}`}>
-                {label}
-              </Link>
-            ))}
+      <div className="mb-3 space-y-2">
+        <div className="scroll-x -mx-3.5 flex gap-1.5 px-3.5" role="tablist" aria-label="Jour">
+          {dayTabs.map(([k, label, iso]) => (
+            <Link key={k || "all"} href={keep({ jour: k })} role="tab" aria-selected={day === k} scroll={false}
+              className={`shrink-0 rounded-full px-4 py-2 text-sm font-semibold ${day === k ? "bg-night text-white" : "border border-line bg-white text-night"}`}>
+              {label}{iso ? <span className={`ml-1 text-[11px] font-normal ${day === k ? "text-white/75" : "text-steel"}`}>{iso.slice(8, 10)}/{iso.slice(5, 7)}</span> : null}
+            </Link>
+          ))}
+        </div>
+        {best ? (
+          <div className="scroll-x -mx-3.5 flex items-center gap-1.5 px-3.5" aria-label="Classement">
+            <span className="shrink-0 text-xs text-steel">Classer par</span>
+            {([["", "Pertinence"], ["probability", "Probabilité"], ["confidence", "Confiance"], ["value", "Valeur"]] as const).map(([v, l]) => {
+              const on = (one(sp, "sort") || "") === v || (v === "" && one(sp, "sort") === "score");
+              return (
+                <Link key={v || "score"} href={keep({ sort: v })} scroll={false} aria-current={on ? "true" : undefined}
+                  className={`shrink-0 rounded-full px-3 py-1.5 text-[12.5px] font-bold ${on ? "bg-pitch text-white" : "border border-line bg-white text-night"}`}>
+                  {l}
+                </Link>
+              );
+            })}
           </div>
-          <div className="grid grid-cols-2 gap-1 rounded-lg bg-white p-1" role="tablist" aria-label="Présentation">
+        ) : (
+          <div className="grid grid-cols-2 gap-1 rounded-lg border border-line bg-white p-1" role="tablist" aria-label="Présentation">
             <Link href={keep({ vue: "" })} role="tab" aria-selected={!list} scroll={false}
               className={`rounded-md py-2 text-center text-sm font-bold ${!list ? "bg-night text-white" : "text-steel"}`}>Par championnat</Link>
             <Link href={keep({ vue: "liste" })} role="tab" aria-selected={list} scroll={false}
               className={`rounded-md py-2 text-center text-sm font-bold ${list ? "bg-night text-white" : "text-steel"}`}>Détail par pronostic</Link>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      <details className="mb-4 rounded-xl border border-line bg-white" open={activeFilters > 0 && !best && !one(sp, "jour") && !one(sp, "vue")}>
-        <summary className="flex items-center justify-between px-4 py-3 text-sm font-semibold">
-          <span>Filtres{activeFilters ? ` (${activeFilters})` : ""}</span>
-          <span className="text-steel" aria-hidden>▾</span>
+      <details className="mb-4 rounded-xl border border-line bg-white" open={activeFilters > 0 && !best && !cote && !one(sp, "jour") && !one(sp, "vue")}>
+        <summary className="flex items-center justify-between gap-2 px-4 py-3 text-sm font-semibold">
+          <span className="flex items-center gap-2">
+            Filtres avancés
+            {activeFilters > 0 && <span className="rounded-full bg-pitch px-2 py-0.5 text-[11px] font-bold text-white">{activeFilters}</span>}
+          </span>
+          <span className="flex items-center gap-3">
+            {(best || cote || activeFilters > 0) && <Link href="/pronostics" className="text-[12.5px] font-bold text-brick">Tout effacer</Link>}
+            <span className="text-steel" aria-hidden>▾</span>
+          </span>
         </summary>
         <form method="get" className="grid grid-cols-2 gap-3 border-t border-line p-4 md:grid-cols-4">
           {day && <input type="hidden" name="jour" value={day} />}
           {one(sp, "vue") && <input type="hidden" name="vue" value={one(sp, "vue")} />}
+          {best && <input type="hidden" name="best" value="1" />}
+          {cote && <input type="hidden" name="cote" value="1" />}
           <label className="text-xs text-steel">
             Du
             <input type="date" name="from" defaultValue={one(sp, "from")} className={field} />
@@ -212,7 +233,10 @@ export default async function Pronostics({ searchParams }: { searchParams: Promi
         <ErrorBox message={res.error} />
       ) : res.data.items.length ? (
         <>
-          <p className="mb-2 px-1 text-xs text-steel">{res.data.count} résultat{res.data.count > 1 ? "s" : ""}</p>
+          <p className="mb-2 flex items-center justify-between gap-2 px-1 text-xs text-steel">
+            <span><strong className="text-night">{res.data.count}</strong> {best ? "opportunité" : "pronostic"}{res.data.count > 1 ? "s" : ""}{chosen ? ` · ${chosen[1].toLowerCase()}` : ""}</span>
+            <span>{new Set(res.data.items.map((p) => p.match.id)).size} match{new Set(res.data.items.map((p) => p.match.id)).size > 1 ? "s" : ""}</span>
+          </p>
           {list ? (
             <div className="grid gap-3 md:grid-cols-2">
               {res.data.items.map((p) => (
@@ -225,7 +249,8 @@ export default async function Pronostics({ searchParams }: { searchParams: Promi
         </>
       ) : (
         <Empty title="Aucun pronostic ne correspond">
-          Élargissez les filtres ou cochez « Tous les marchés ». Les matchs sans données suffisantes ne sont jamais proposés.
+          {chosen ? "Aucun pronostic retenu pour ce jour : essayez « Tous » ou un autre jour. " : "Élargissez les filtres ou cochez « Tous les marchés ». "}
+          Les matchs sans données suffisantes ne sont jamais proposés.
         </Empty>
       )}
     </>
