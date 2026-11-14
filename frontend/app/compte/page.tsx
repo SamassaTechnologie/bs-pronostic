@@ -14,6 +14,22 @@ export default async function Compte() {
   const me = await currentMember();
   if (!me) redirect("/connexion?suite=/compte");
   const tz = await userTz();
+  if (me.guest) {
+    return (
+      <>
+        <h1 className="px-1 font-display text-2xl font-bold tracking-tight">Mon compte</h1>
+        <Card className="mt-4 p-4 text-sm leading-relaxed">
+          <strong>La connexion est momentanément indisponible.</strong> Les pronostics restent en accès libre jusqu&apos;au 30 novembre.
+          Votre compte et vos pronostics suivis sont conservés : vous les retrouverez à cette date.
+        </Card>
+        <div className="mt-5 grid gap-2.5">
+          <Link href="/pronostics" className="rounded-xl border border-line bg-white px-4 py-3.5 font-semibold">Voir les pronostics</Link>
+          <Link href="/compte/alertes" className="rounded-xl border-2 border-amber bg-white px-4 py-3.5 font-semibold">🔔 Mes alertes</Link>
+          <Link href="/bilan" className="rounded-xl border border-line bg-white px-4 py-3.5 font-semibold">Bilan vérifié</Link>
+        </div>
+      </>
+    );
+  }
   return (
     <>
       <h1 className="px-1 font-display text-2xl font-bold tracking-tight">Bonjour{me.name ? ` ${me.name}` : ""}</h1>

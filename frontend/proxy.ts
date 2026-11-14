@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { openAccess } from "./lib/open-access";
 
 const MEMBERS_ONLY = ["/machine", "/pronostics", "/matchs", "/combines", "/compte", "/direct", "/assistant", "/jouer"];
 
@@ -9,6 +10,8 @@ export async function proxy(request: NextRequest) {
   const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
   let response = NextResponse.next({ request });
   if (!url || !key) return response;
+  // Connexion suspendue (quota) : accès libre jusqu'à la date fixée dans lib/open-access.ts
+  if (openAccess()) return response;
   const supabase = createServerClient(url, key, {
     cookies: {
       getAll: () => request.cookies.getAll(),

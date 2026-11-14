@@ -305,3 +305,7 @@ Ce qui se passe sans intervention :
 À surveiller par le propriétaire (aucun code à changer) : Render reste sous 750 h gratuites/mois avec un seul
 service ; si Gemini et Groq retirent leurs modèles gratuits, l'analyse IA s'efface (les pronostics ne dépendent pas
 de l'IA) ; prochaine trêve internationale en mars 2027.
+
+## Accès libre temporaire (14 → 30 novembre 2026)
+
+Supabase a suspendu la connexion des membres (quota de bande passante dépassé sur le cycle en cours). Jusqu'au 1er décembre 2026 00:00 UTC, les pages membres s'affichent sans compte (`frontend/lib/open-access.ts`) ; l'assistant IA et les paris de la section Jouer restent réservés aux membres connectés. La connexion redevient obligatoire automatiquement à cette date, sans mise à jour.

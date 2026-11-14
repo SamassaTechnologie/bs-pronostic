@@ -18,6 +18,9 @@ async function forward(req: NextRequest, path: string[], method: "GET" | "POST")
   if (authEnabled && MEMBERS_ONLY.some((r) => r.test(p)) && !member) {
     return NextResponse.json({ detail: "Connectez-vous pour accéder aux pronostics." }, { status: 401 });
   }
+  if (member?.guest && (p === "assistant" || /^jeu\/(paris|devis|mes-paris)$/.test(p))) {
+    return NextResponse.json({ detail: "La connexion est momentanément indisponible : cette fonction revient le 30 novembre." }, { status: 401 });
+  }
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (p === "assistant") {
     headers["X-Assistant-Token"] = process.env.ASSISTANT_TOKEN || "";

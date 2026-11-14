@@ -57,7 +57,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </div>
           </div>
         </header>
-        <FollowsProvider signedIn={signedIn}>
+        {member?.guest && (
+          <p className="bg-amber-soft px-4 py-2 text-center text-[12.5px] font-semibold text-night">
+            Connexion momentanément indisponible : accès libre aux pronostics jusqu&apos;au 30 novembre.
+          </p>
+        )}
+        <FollowsProvider signedIn={signedIn && !member?.guest}>
           <main className="mx-auto max-w-5xl px-3.5 pb-28 pt-4 md:px-6 md:pb-12">{children}</main>
         </FollowsProvider>
         <footer className="mx-auto max-w-5xl px-4 pb-28 text-center text-xs text-steel md:pb-8">
