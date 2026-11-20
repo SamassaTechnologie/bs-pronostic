@@ -1189,3 +1189,43 @@ def test_machine_more_events(populated, client, monkeypatch):
         for m in db.scalars(select(Match).where(Match.id.in_(list(saved)))).all():
             m.status = saved[m.id]
         db.commit()
+
+
+def test_fdorg_backup_calendar_links_teams(populated, monkeypatch):
+    """Fichier des matchs à venir de football-data.co.uk en retard : le calendrier football-data.org prend le relais,
+    seulement pour des équipes reliées avec certitude (matchs terminés communs), sans création d'équipe."""
+    from app.providers.football_data_org import FootballDataOrg
+    from app.models import Competition, Team
+    from app.services.sync import _fo_upcoming
+    with SessionLocal() as db:
+        comp = db.scalar(select(Competition).where(Competition.fdorg_code == "PL"))
+        fin = db.scalars(select(Match).where(Match.competition_id == comp.id, Match.status == "FINISHED")
+                         .order_by(Match.kickoff.desc())).all()[:120]
+        now = fin[0].kickoff + timedelta(days=2)
+        ext = {}  # identifiant football-data.org fictif par équipe
+        for m in fin:
+            for t in (m.home_team_id, m.away_team_id):
+                ext.setdefault(t, 9000 + len(ext))
+        rows = [{"status": "FINISHED", "utcDate": m.kickoff.isoformat().replace("+00:00", "Z"),
+                 "competition": {"code": "PL"}, "homeTeam": {"name": f"X{m.home_team_id} FC", "id": ext[m.home_team_id]},
+                 "awayTeam": {"name": f"Y{m.away_team_id} FC", "id": ext[m.away_team_id]},
+                 "score": {"fullTime": {"home": m.home_goals, "away": m.away_goals}}} for m in fin]
+        a, b = fin[0].home_team_id, fin[0].away_team_id
+        ko = (now + timedelta(days=1)).replace(microsecond=0)
+        upcoming = [{"status": "TIMED", "utcDate": ko.isoformat().replace("+00:00", "Z"), "id": 777,
+                     "competition": {"code": "PL"}, "homeTeam": {"name": "Nom différent", "id": ext[b]},
+                     "awayTeam": {"name": "Autre graphie", "id": ext[a]}},
+                    {"status": "TIMED", "utcDate": ko.isoformat().replace("+00:00", "Z"), "id": 778,
+                     "competition": {"code": "PL"}, "homeTeam": {"name": "Promu inconnu", "id": 1},
+                     "awayTeam": {"name": "Autre promu", "id": 2}}]
+        monkeypatch.setattr(FootballDataOrg, "competition_matches", lambda self, code, y: rows)
+        monkeypatch.setattr(FootballDataOrg, "matches_between", lambda self, f, t: upcoming)
+        n_teams = db.scalar(select(func.count(Team.id)))
+        res = _fo_upcoming(db, FootballDataOrg(), [], now, 3, [comp])
+        assert res["status"] == "ok", res
+        assert db.scalar(select(func.count(Team.id))) == n_teams  # aucune équipe créée
+        new = db.scalar(select(Match).where(Match.source_ref == "777"))
+        assert new is not None and (new.home_team_id, new.away_team_id) == (b, a) and new.status == "SCHEDULED"
+        assert db.scalar(select(Match).where(Match.source_ref == "778")) is None
+        linked = db.scalars(select(Team).where(Team.fdorg_id.is_not(None))).all()
+        assert all(ext.get(t.id) == t.fdorg_id for t in linked) and len(linked) >= 10

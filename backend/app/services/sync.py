@@ -15,7 +15,8 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from ..config import get_settings
-from ..models import ApiUsage, Competition, Injury, Match, OddsQuote, SyncRun, Team, TeamAlias, lean_matches, utcnow
+from ..models import (ApiUsage, Competition, Injury, Match, OddsQuote, Setting, SyncRun, Team, TeamAlias,
+                      lean_matches, utcnow)
 from ..providers.api_football import ApiFootball
 from ..providers.base import MatchRecord, OddsRecord, ProviderError
 from ..providers.football_data_co_uk import FootballDataCoUk, current_season_start, internal_maps
@@ -568,25 +569,101 @@ def _fo_history(db: Session, fo: FootballDataOrg, comps: list[Competition], now:
     return _run(db, fo.name, "historique", work)
 
 
-def _fo_upcoming(db: Session, fo: FootballDataOrg, comps: list[Competition], now: datetime, days_ahead: int) -> dict:
+LINK_EVERY = timedelta(days=2)
+
+
+def link_fdorg_teams(db: Session, fo: FootballDataOrg, comps: list[Competition], now: datetime) -> int:
+    """Relie les équipes des championnats football-data.co.uk à leur identifiant football-data.org, à partir des
+    matchs terminés communs aux deux sources (même jour, même score). Aucun rapprochement par le nom seul :
+    une équipe non reliée avec certitude n'est jamais créée ni devinée."""
+    memo = db.get(Setting, "fdorg_links") or Setting(key="fdorg_links", value={})
+    done = dict(memo.value or {})
+    linked = 0
+    for comp in comps:
+        last = done.get(comp.code)
+        if last and now - datetime.fromisoformat(last) < LINK_EVERY:
+            continue
+        recent = db.execute(select(Match.home_team_id, Match.away_team_id).where(
+            Match.competition_id == comp.id, Match.kickoff > now - timedelta(days=200))).all()
+        team_ids = {t for row in recent for t in row}
+        if not team_ids or not db.scalar(select(func.count(Team.id)).where(
+                Team.id.in_(team_ids), Team.fdorg_id.is_(None))):
+            continue
+        try:
+            rows = fo.competition_matches(comp.fdorg_code, _season_year(comp, now))
+        except ProviderError:
+            continue
+        finished = db.scalars(select(Match).options(*lean_matches()).where(
+            Match.competition_id == comp.id, Match.status == "FINISHED",
+            Match.kickoff > now - timedelta(days=200))).all()
+        by_day: dict = {}
+        for m in finished:
+            by_day.setdefault(m.kickoff.date(), []).append(m)
+        votes: dict[int, dict[int, int]] = {}
+        for r in rows:
+            rec = fo.to_record(r, comp.code)
+            if rec is None or rec.status != "FINISHED" or rec.home_goals is None or not rec.home_ext_id:
+                continue
+            day = rec.kickoff.date()
+            cands = [m for d in (day - timedelta(days=1), day, day + timedelta(days=1)) for m in by_day.get(d, [])
+                     if m.home_goals == rec.home_goals and m.away_goals == rec.away_goals]
+            if len(cands) != 1:
+                continue
+            for ext, tid in ((rec.home_ext_id, cands[0].home_team_id), (rec.away_ext_id, cands[0].away_team_id)):
+                votes.setdefault(ext, {}).setdefault(tid, 0)
+                votes[ext][tid] += 1
+        taken = {t.fdorg_id for t in db.scalars(select(Team).where(Team.fdorg_id.is_not(None))).all()}
+        for ext, cnt in votes.items():
+            ranked = sorted(cnt.items(), key=lambda x: x[1], reverse=True)
+            tid, n = ranked[0]
+            second = ranked[1][1] if len(ranked) > 1 else 0
+            team = db.get(Team, tid)
+            if n >= 3 and n >= 3 * second and ext not in taken and team is not None and team.fdorg_id is None:
+                team.fdorg_id = ext
+                taken.add(ext)
+                linked += 1
+        done[comp.code] = now.isoformat()
+    memo.value = done
+    db.merge(memo)
+    db.commit()
+    return linked
+
+
+def _fo_upcoming(db: Session, fo: FootballDataOrg, comps: list[Competition], now: datetime, days_ahead: int,
+                 extra: Optional[list[Competition]] = None) -> dict:
+    """Calendrier football-data.org. `extra` : championnats suivis via football-data.co.uk, dont le fichier des
+    matchs à venir paraît parfois tard ; seuls leurs matchs à venir entre deux équipes déjà reliées sont ajoutés."""
     def work(run: SyncRun) -> tuple[int, str]:
         by_code = {c.fdorg_code: c for c in comps}
+        backup = {c.fdorg_code: c for c in (extra or []) if c.fdorg_code not in by_code}
+        linked = link_fdorg_teams(db, fo, list(backup.values()), now) if backup else 0
+        known = {t.fdorg_id for t in db.scalars(select(Team).where(Team.fdorg_id.is_not(None))).all()}
         resolver = TeamResolver(db)
         indexes: dict[int, MatchIndex] = {}
-        n = 0
+        n = n_backup = 0
         d_from = (now - timedelta(days=1)).date().isoformat()
         d_to = (now + timedelta(days=days_ahead + 1)).date().isoformat()  # dateTo exclusif
         for m in fo.matches_between(d_from, d_to):
-            comp = by_code.get((m.get("competition") or {}).get("code"))
+            code = (m.get("competition") or {}).get("code")
+            comp = by_code.get(code) or backup.get(code)
             if comp is None:
                 continue
             rec = fo.to_record(m, comp.code)
-            if rec:
-                idx = indexes.setdefault(comp.id, MatchIndex(db, comp.id))
-                if upsert_match(db, comp, rec, resolver, idx):
-                    n += 1
+            if rec is None:
+                continue
+            if code in backup and (rec.status != "SCHEDULED" or rec.home_ext_id not in known
+                                   or rec.away_ext_id not in known):
+                continue
+            idx = indexes.setdefault(comp.id, MatchIndex(db, comp.id))
+            if upsert_match(db, comp, rec, resolver, idx):
+                n += 1
+                n_backup += code in backup
         db.commit()
-        return n, f"{n} matchs mis à jour"
+        msg = f"{n} matchs mis à jour"
+        if backup:
+            msg += f" (dont {n_backup} des championnats européens"
+            msg += f", {linked} équipe(s) reliée(s))" if linked else ")"
+        return n, msg
 
     return _run(db, fo.name, "calendrier", work)
 
@@ -646,11 +723,12 @@ def run_sync(db: Session, kinds: Iterable[str] = ("history", "upcoming", "enrich
 
     fo = FootballDataOrg()
     fo_comps = [c for c in comps if c.primary_source == "football_data_org" and c.fdorg_code]
-    if fo.is_configured() and flags["football_data_org"] and fo_comps:
+    fo_backup = [c for c in fd_comps if c.fdorg_code]
+    if fo.is_configured() and flags["football_data_org"] and (fo_comps or fo_backup):
         if "history" in kinds:
             results.append(_fo_history(db, fo, fo_comps, now, force))
         if "upcoming" in kinds:
-            results.append(_fo_upcoming(db, fo, fo_comps, now, int(sel["days_ahead"])))
+            results.append(_fo_upcoming(db, fo, fo_comps, now, int(sel["days_ahead"]), fo_backup))
     if flags.get("allsports", True):
         from .allsports_sync import run_allsports
         results.extend(run_allsports(db, kinds, now, force, int(sel["days_ahead"])))
