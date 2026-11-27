@@ -49,6 +49,11 @@ export default async function Equipe({ params }: { params: Promise<{ id: string 
     ["Buts encaissés / match", (x) => num(x.goals_against_avg ?? null)],
     ["Matchs à +2,5 buts", (x) => pct(x.over25_rate ?? null)],
     ["Les deux marquent", (x) => pct(x.btts_rate ?? null)],
+    ["Sans encaisser", (x) => pct(x.clean_sheet_rate ?? null)],
+    ["Sans marquer", (x) => pct(x.failed_to_score_rate ?? null)],
+    ["Mène à la mi-temps", (x) => pct(x.ht_lead_rate ?? null)],
+    ["Buts en 1re mi-temps / match", (x) => num(x.ht_goals_avg ?? null)],
+    ["Plus de buts en 2de mi-temps", (x) => pct(x.second_half_more_rate ?? null)],
     ["Corners / match (total)", (x) => num(x.corners_total_avg ?? null, 1)],
     ["Cartons / match (total)", (x) => num(x.cards_total_avg ?? null, 1)],
   ];

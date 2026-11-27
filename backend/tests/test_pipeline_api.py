@@ -253,10 +253,15 @@ def test_catalog_endpoints(client):
     assert d["competition"]["name"] == "Premier League" and len(d["standings"]) == 20
     assert d["standings"][0]["position"] == 1 and d["standings"][0]["team"] and d["stats"]["matches"] > 200
     assert client.get("/api/competitions/NOPE").status_code == 404
+    st = d["stats"]
+    assert 0 < st["over15"] <= 1 and st["over35"] <= st["over25"] <= st["over15"] and st["ht_matches"] > 0
+    assert len(st["leaders"]["over25"]) == 3 and st["leaders"]["clean_sheets"][0]["value"] is not None
+    assert abs(sum(x["rate"] for x in st["htft"])) <= 1
     team_id = d["standings"][0]["team_id"]
     t = client.get(f"/api/teams/{team_id}").json()
     assert t["team"]["id"] == team_id and t["standing"]["position"] == 1
     assert t["form"]["last10"]["played"] == 10 and t["recent"]
+    assert "clean_sheet_rate" in t["form"]["last10"] and "ht_lead_rate" in t["form"]["last10"]
     s = client.get("/api/search", params={"q": "manchester"}).json()
     names = {x["name"] for x in s["teams"]}
     assert {"Man City", "Man United"} <= names

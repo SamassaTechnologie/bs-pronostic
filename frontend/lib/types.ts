@@ -217,5 +217,6 @@ export type StandingRow = {
 export type FormSummary = {
   played: number; sequence?: string; wins?: number; draws?: number; losses?: number; points_per_match?: number;
   goals_for_avg?: number; goals_against_avg?: number; over25_rate?: number; btts_rate?: number; clean_sheets?: number;
-  corners_total_avg?: number; cards_total_avg?: number;
+  corners_total_avg?: number; cards_total_avg?: number; clean_sheet_rate?: number; failed_to_score_rate?: number;
+  ht_matches?: number; ht_lead_rate?: number; ht_goals_avg?: number; second_half_more_rate?: number;
 };

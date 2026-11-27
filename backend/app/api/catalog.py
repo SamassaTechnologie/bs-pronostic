@@ -110,7 +110,38 @@ def competition_detail(code: str, db: Session = Depends(get_db)):
             "btts": round(sum(d.hg > 0 and d.ag > 0 for d in data) / n, 3),
             "avg_corners": round(sum(corners) / len(corners), 1) if corners else None,
             "avg_cards": round(sum(cards) / len(cards), 1) if cards else None,
+            "over15": round(sum(d.hg + d.ag > 1.5 for d in data) / n, 3),
+            "over35": round(sum(d.hg + d.ag > 3.5 for d in data) / n, 3),
+            "clean_sheet": round(sum(d.hg == 0 or d.ag == 0 for d in data) / n, 3),
+            "goalless": round(sum(d.hg + d.ag == 0 for d in data) / n, 3),
         }
+        ht = [d for d in data if d.hthg is not None and d.htag is not None]
+        if ht:
+            stats["ht_matches"] = len(ht)
+            stats["ht_goals_avg"] = round(sum(d.hthg + d.htag for d in ht) / len(ht), 2)
+            stats["ht_draw"] = round(sum(d.hthg == d.htag for d in ht) / len(ht), 3)
+            stats["second_half_more"] = round(
+                sum((d.hg + d.ag - d.hthg - d.htag) > (d.hthg + d.htag) for d in ht) / len(ht), 3)
+            sign = lambda a, b: "1" if a > b else "X" if a == b else "2"  # noqa: E731
+            htft: dict = defaultdict(int)
+            for d in ht:
+                htft[f"{sign(d.hthg, d.htag)}/{sign(d.hg, d.ag)}"] += 1
+            stats["htft"] = [{"key": k, "rate": round(v / len(ht), 3)}
+                             for k, v in sorted(htft.items(), key=lambda x: -x[1])[:4]]
+        # Équipes en tête : taux calculés sur les matchs de la saison (au moins 5 matchs joués)
+        leaders = {}
+        rows = []
+        for r in table:
+            ms_t = history.before(r["team_id"], now + timedelta(days=1), 60)
+            ms_t = [m for m in ms_t if m.season == season] if season else ms_t
+            if len(ms_t) >= 5:
+                rows.append((r["team_id"], r["team"], form_summary(r["team_id"], ms_t)))
+        for key, field in (("over25", "over25_rate"), ("btts", "btts_rate"), ("clean_sheets", "clean_sheet_rate"),
+                           ("failed_to_score", "failed_to_score_rate"), ("goals_for", "goals_for_avg")):
+            top = sorted(rows, key=lambda x: x[2].get(field, 0), reverse=True)[:3]
+            leaders[key] = [{"team_id": tid, "team": name, "value": f.get(field), "played": f["played"]}
+                            for tid, name, f in top]
+        stats["leaders"] = leaders
     upcoming = db.scalars(select(Match).where(Match.competition_id == c.id, Match.status == "SCHEDULED",
                                               Match.kickoff >= now - timedelta(hours=2))
                           .order_by(Match.kickoff).limit(20)).unique().all()

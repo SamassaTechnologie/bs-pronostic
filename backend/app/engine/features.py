@@ -71,7 +71,21 @@ def form_summary(team_id: Hashable, ms: Sequence[MatchData]) -> dict:
         "clean_sheets": sum(1 for x in ga if x == 0),
         "failed_to_score": sum(1 for x in gf if x == 0),
         "scored_in": sum(1 for x in gf if x > 0),
+        "clean_sheet_rate": round(sum(1 for x in ga if x == 0) / n, 3),
+        "failed_to_score_rate": round(sum(1 for x in gf if x == 0) / n, 3),
     }
+    hm = [m for m in ms if m.hthg is not None and m.htag is not None]
+    if hm:
+        def ht_for(m):
+            return m.hthg if m.home_id == team_id else m.htag
+
+        def ht_against(m):
+            return m.htag if m.home_id == team_id else m.hthg
+        out["ht_matches"] = len(hm)
+        out["ht_lead_rate"] = round(sum(1 for m in hm if ht_for(m) > ht_against(m)) / len(hm), 3)
+        out["ht_goals_avg"] = round(sum(m.hthg + m.htag for m in hm) / len(hm), 2)
+        out["second_half_more_rate"] = round(
+            sum(1 for m in hm if (m.hg + m.ag - m.hthg - m.htag) > (m.hthg + m.htag)) / len(hm), 3)
     cm = [m for m in ms if m.total_corners is not None]
     if cm:
         out["corners_for_avg"] = round(sum(m.hc if m.home_id == team_id else m.ac for m in cm) / len(cm), 2)

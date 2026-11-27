@@ -14,7 +14,13 @@ type Detail = {
   competition: { id: number; code: string; name: string; country: string };
   season: string | null;
   standings: StandingRow[];
-  stats: { matches: number; avg_goals: number; home_win: number; draw: number; away_win: number; over25: number; btts: number; avg_corners: number | null; avg_cards: number | null } | null;
+  stats: {
+    matches: number; avg_goals: number; home_win: number; draw: number; away_win: number; over25: number; btts: number;
+    avg_corners: number | null; avg_cards: number | null; over15?: number; over35?: number; clean_sheet?: number; goalless?: number;
+    ht_matches?: number; ht_goals_avg?: number; ht_draw?: number; second_half_more?: number;
+    htft?: { key: string; rate: number }[];
+    leaders?: Record<string, { team_id: number; team: string; value: number | null; played: number }[]>;
+  } | null;
   upcoming: { match: MatchSummary; analysis: MatchAnalysisSummary }[];
   recent: MatchSummary[];
   performance: { total: number; n: number; won: number; hit_rate: number | null };
@@ -39,8 +45,14 @@ export default async function Ligue({ params, searchParams }: { params: Promise<
     return <ErrorBox message={res.error} />;
   }
   const d = res.data;
-  const tab = vue === "classement" || vue === "resultats" ? vue : "matchs";
-  const tabs: [string, string][] = [["matchs", "Matchs"], ["classement", "Classement"], ["resultats", "Résultats"]];
+  const tab = vue === "classement" || vue === "resultats" || vue === "stats" ? vue : "matchs";
+  const tabs: [string, string][] = [["matchs", "Matchs"], ["classement", "Classement"], ["stats", "Stats"], ["resultats", "Résultats"]];
+  const st = d.stats;
+  const HTFT: Record<string, string> = { "1": "Dom.", X: "Nul", "2": "Ext." };
+  const LEAD: [string, string, boolean][] = [
+    ["over25", "Plus de 2,5 buts", true], ["btts", "Les deux marquent", true], ["clean_sheets", "Sans encaisser", true],
+    ["failed_to_score", "Sans marquer", true], ["goals_for", "Buts marqués / match", false],
+  ];
 
   return (
     <>
@@ -70,7 +82,7 @@ export default async function Ligue({ params, searchParams }: { params: Promise<
       )}
 
       <div className="sticky top-[calc(env(safe-area-inset-top)+60px)] z-20 -mx-3.5 mt-5 bg-mist/95 px-3.5 py-2 backdrop-blur md:static md:mx-0 md:px-0">
-        <div className="grid grid-cols-3 gap-1 rounded-lg bg-white p-1" role="tablist">
+        <div className="grid grid-cols-4 gap-1 rounded-lg bg-white p-1" role="tablist">
           {tabs.map(([k, l]) => (
             <Link key={k} href={`/ligues/${d.competition.code}?vue=${k}`} role="tab" aria-selected={tab === k} replace scroll={false}
               className={`rounded-md py-2 text-center text-sm font-bold ${tab === k ? "bg-night text-white" : "text-steel"}`}>{l}</Link>
@@ -125,6 +137,77 @@ export default async function Ligue({ params, searchParams }: { params: Promise<
             <Empty title="Classement indisponible" />
           )}
           <p className="mt-2 px-1 text-xs text-steel">Calculé à partir des résultats en base (3 points la victoire, 1 le nul).</p>
+        </Section>
+      )}
+
+      {tab === "stats" && (
+        <Section title="Statistiques de la saison">
+          {st ? (
+            <div className="space-y-4">
+              <div className="overflow-hidden rounded-xl border border-line bg-white">
+                <table className="w-full text-sm">
+                  <tbody>
+                    {([
+                      ["Matchs joués", String(st.matches)],
+                      ["Plus de 1,5 but", st.over15 != null ? pct(st.over15) : "—"],
+                      ["Plus de 2,5 buts", pct(st.over25)],
+                      ["Plus de 3,5 buts", st.over35 != null ? pct(st.over35) : "—"],
+                      ["Les deux équipes marquent", pct(st.btts)],
+                      ["Au moins une équipe sans encaisser", st.clean_sheet != null ? pct(st.clean_sheet) : "—"],
+                      ["Matchs à 0-0", st.goalless != null ? pct(st.goalless) : "—"],
+                      ["Victoire dom. / nul / ext.", `${pct(st.home_win)} / ${pct(st.draw)} / ${pct(st.away_win)}`],
+                      ["Buts en 1re mi-temps / match", st.ht_goals_avg != null ? num(st.ht_goals_avg, 2) : "Données insuffisantes"],
+                      ["Nul à la mi-temps", st.ht_draw != null ? pct(st.ht_draw) : "Données insuffisantes"],
+                      ["Plus de buts en 2de mi-temps", st.second_half_more != null ? pct(st.second_half_more) : "Données insuffisantes"],
+                    ] as [string, string][]).map(([l, v]) => (
+                      <tr key={l} className="border-t border-line first:border-0">
+                        <td className="py-2 pl-4 text-steel">{l}</td>
+                        <td className="py-2 pr-4 text-right font-bold">{v}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {st.htft && st.htft.length > 0 && (
+                <div className="rounded-xl border border-line bg-white p-4">
+                  <div className="mb-2 text-[13px] font-bold">Mi-temps / fin de match les plus fréquents</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    {st.htft.map((x) => {
+                      const [a, b] = x.key.split("/");
+                      return (
+                        <div key={x.key} className="rounded-lg bg-mist px-3 py-2">
+                          <div className="text-[12px] text-steel">{HTFT[a]} puis {HTFT[b]}</div>
+                          <div className="font-display text-lg font-bold">{pct(x.rate)}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {st.leaders && (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {LEAD.filter(([k]) => st.leaders?.[k]?.length).map(([k, label, rate]) => (
+                    <div key={k} className="overflow-hidden rounded-xl border border-line bg-white">
+                      <div className="border-b border-line px-4 py-2 text-[13px] font-bold">{label} : équipes en tête</div>
+                      {st.leaders![k].map((t, i) => (
+                        <Link key={t.team_id} href={`/equipes/${t.team_id}`} className="flex items-center gap-3 border-t border-line px-4 py-2 text-sm first:border-0">
+                          <span className="w-4 text-steel">{i + 1}</span>
+                          <span className="min-w-0 flex-1 truncate font-semibold">{t.team}</span>
+                          <span className="text-[11px] text-steel">{t.played} m.</span>
+                          <span className="w-12 text-right font-bold">{t.value == null ? "—" : rate ? pct(t.value) : num(t.value, 2)}</span>
+                        </Link>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="px-1 text-xs text-steel">Calculé sur les matchs terminés de la saison en base. Équipes en tête : au moins 5 matchs joués.</p>
+            </div>
+          ) : (
+            <Empty title="Données insuffisantes" />
+          )}
         </Section>
       )}
 
