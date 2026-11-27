@@ -36,6 +36,9 @@ export default async function Ligues() {
         <h1 className="font-display text-2xl font-bold tracking-tight">Championnats</h1>
         <p className="text-sm text-steel">Classements, statistiques et prochains matchs de chaque compétition suivie.</p>
       </div>
+      <Link href="/comparer" className="mb-4 flex items-center justify-center gap-2 rounded-xl border border-line bg-white py-2.5 text-sm font-bold text-night">
+        ⚖️ Comparer deux équipes
+      </Link>
       <div className="space-y-5">
         {popular.length > 0 && (
           <section id="grands-championnats">
