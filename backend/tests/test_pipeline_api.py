@@ -262,6 +262,13 @@ def test_catalog_endpoints(client):
     assert t["team"]["id"] == team_id and t["standing"]["position"] == 1
     assert t["form"]["last10"]["played"] == 10 and t["recent"]
     assert "clean_sheet_rate" in t["form"]["last10"] and "ht_lead_rate" in t["form"]["last10"]
+    other = d["standings"][1]["team_id"]
+    cmp_ = client.get("/api/compare", params={"a": team_id, "b": other}).json()
+    assert cmp_["a"]["team"]["id"] == team_id and cmp_["b"]["standing"]["position"] == 2
+    assert cmp_["a"]["last10"]["played"] == 10 and cmp_["a"]["common_scores"] and cmp_["h2h"]["matches"]
+    h = cmp_["h2h"]
+    assert h["wins_a"] + h["draws"] + h["wins_b"] == len(h["matches"])
+    assert client.get("/api/compare", params={"a": team_id, "b": team_id}).status_code == 404
     s = client.get("/api/search", params={"q": "manchester"}).json()
     names = {x["name"] for x in s["teams"]}
     assert {"Man City", "Man United"} <= names

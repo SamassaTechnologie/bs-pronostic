@@ -80,6 +80,10 @@ export default async function Equipe({ params }: { params: Promise<{ id: string 
         </div>
       </div>
 
+      <Link href={`/comparer?a=${d.team.id}`} className="mt-3 flex items-center justify-center gap-2 rounded-xl border border-line bg-white py-2.5 text-sm font-bold text-night">
+        ⚖️ Comparer avec une autre équipe
+      </Link>
+
       <Section title="Prochains matchs">
         {d.upcoming.length ? (
           <div className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-white">

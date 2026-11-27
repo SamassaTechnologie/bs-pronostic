@@ -200,6 +200,63 @@ def team_detail(team_id: int, db: Session = Depends(get_db)):
     }
 
 
+def _compare_block(db: Session, t: Team, now: datetime) -> dict:
+    """Profil d'une équipe pour le comparateur : uniquement des chiffres calculés sur ses matchs en base."""
+    ms = db.scalars(select(Match).where(or_(Match.home_team_id == t.id, Match.away_team_id == t.id),
+                                        Match.status == "FINISHED", Match.kickoff < now)
+                    .order_by(Match.kickoff.desc()).limit(60)).unique().all()
+    data = [match_to_data(m) for m in ms]
+    history = TeamHistory(data)
+    last10, last20 = history.before(t.id, now, 10), history.before(t.id, now, 20)
+    comp_counts: dict = defaultdict(int)
+    for m in ms[:40]:
+        comp_counts[m.competition_id] += 1
+    main_comp = db.get(Competition, max(comp_counts, key=comp_counts.get)) if comp_counts else None
+    standing = None
+    if main_comp:
+        season = _current_season(db, main_comp.id)
+        rows = standings([match_to_data(m) for m in db.scalars(select(Match).where(
+            Match.competition_id == main_comp.id, Match.status == "FINISHED", Match.season == season)).unique()])
+        standing = next(({**r, "teams": len(rows)} for r in rows if r["team_id"] == t.id), None)
+    scores: dict = defaultdict(int)
+    for d in last20:
+        scores[f"{d.goals_for(t.id)}-{d.goals_against(t.id)}"] += 1
+    common = sorted(scores.items(), key=lambda x: -x[1])[:3]
+    return {
+        "team": {"id": t.id, "name": t.name, "country": t.country},
+        "competition": comp_row(main_comp) if main_comp else None,
+        "standing": standing,
+        "last10": form_summary(t.id, last10),
+        "last20": form_summary(t.id, last20),
+        "home10": form_summary(t.id, history.before(t.id, now, 10, venue="home")),
+        "away10": form_summary(t.id, history.before(t.id, now, 10, venue="away")),
+        "common_scores": [{"score": k, "count": v} for k, v in common],
+    }
+
+
+@router.get("/compare")
+def compare(a: int = Query(...), b: int = Query(...), db: Session = Depends(get_db)):
+    """Comparateur de deux équipes au choix, avec leurs confrontations directes."""
+    ta, tb = db.get(Team, a), db.get(Team, b)
+    if ta is None or tb is None or a == b:
+        raise HTTPException(404, "Équipe introuvable")
+    now = _now()
+    h2h = db.scalars(select(Match).where(Match.status == "FINISHED", or_(
+        (Match.home_team_id == a) & (Match.away_team_id == b),
+        (Match.home_team_id == b) & (Match.away_team_id == a))).order_by(Match.kickoff.desc()).limit(8)).unique().all()
+    wins_a = sum(1 for m in h2h if (m.home_goals > m.away_goals) == (m.home_team_id == a) and m.home_goals != m.away_goals)
+    draws = sum(1 for m in h2h if m.home_goals == m.away_goals)
+    nxt = db.scalar(select(Match).where(Match.status == "SCHEDULED", Match.kickoff >= now, or_(
+        (Match.home_team_id == a) & (Match.away_team_id == b),
+        (Match.home_team_id == b) & (Match.away_team_id == a))).order_by(Match.kickoff).limit(1))
+    return {
+        "a": _compare_block(db, ta, now), "b": _compare_block(db, tb, now),
+        "h2h": {"matches": [match_summary(m) for m in h2h], "wins_a": wins_a, "draws": draws,
+                "wins_b": len(h2h) - wins_a - draws},
+        "next": match_summary(nxt) if nxt else None,
+    }
+
+
 @router.get("/search")
 def search(q: str = Query(..., min_length=2, max_length=60), db: Session = Depends(get_db)):
     """Recherche d'équipes, de championnats et de pays (insensible aux accents)."""
